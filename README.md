@@ -26,7 +26,7 @@ A personal AI assistant that runs locally with a beautiful terminal interface (T
 ```bash
 # Clone repo
 git clone https://github.com/dhruv0457/ELE.git
-cd ele-agent
+cd ELE
 
 # Backend
 cd backend
