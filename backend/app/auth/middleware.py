@@ -13,8 +13,13 @@ from app.db.models import User
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Skip auth for health, docs, and auth endpoints
-        public_paths = ["/health", "/docs", "/redoc", "/openapi.json", "/api/v1/auth"]
+        # Skip auth for health, docs, auth endpoints, and the WS chat (it does
+        # its own token verification via verify_ws_token).
+        public_paths = [
+            "/health", "/docs", "/redoc", "/openapi.json",
+            "/api/v1/login", "/api/v1/register", "/api/v1/logout",
+            "/api/v1/ws/chat",
+        ]
         if any(request.url.path.startswith(path) for path in public_paths):
             return await call_next(request)
 
@@ -93,9 +98,11 @@ async def verify_ws_token(
 
 def create_access_token(user_id: str, email: str) -> str:
     """Create JWT access token"""
+    import time as _time
     payload = {
         "sub": user_id,
         "email": email,
-        "exp": settings.JWT_EXPIRY_HOURS * 3600,
+        "exp": int(_time.time()) + (settings.JWT_EXPIRY_HOURS * 3600),
+        "iat": int(_time.time()),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)

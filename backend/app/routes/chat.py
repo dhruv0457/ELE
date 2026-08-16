@@ -44,10 +44,16 @@ manager = ConnectionManager()
 async def websocket_chat(
     websocket: WebSocket,
     session_id: Optional[str] = Query(None),
-    token: Optional[str] = Cookie(None),
+    token: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """WebSocket endpoint for streaming chat"""
+    """WebSocket endpoint for streaming chat.
+
+    The token may be supplied either as a query parameter (``?token=...``)
+    or as the ``access_token`` cookie.
+    """
+    if not token:
+        token = websocket.cookies.get("access_token")
     # Verify authentication
     user_id = await verify_ws_token(token, db)
     if not user_id:
@@ -113,7 +119,8 @@ async def handle_chat_message(
 
     # Stream agent response
     try:
-        async for event in run_agent(request, user_id, stream=True):
+        event_stream = await run_agent(request, user_id, stream=True)
+        async for event in event_stream:
             await websocket.send_json(event.model_dump(mode="json"))
     except Exception as e:
         await websocket.send_json({

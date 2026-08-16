@@ -16,7 +16,7 @@ from app.agents.schemas import (
     ThoughtEvent, ToolStartEvent, ToolResultEvent,
     ScreenshotEvent, ProgressEvent, FinalEvent, WSEvent
 )
-from app.agents.llm_clients import get_orchestrator
+from app.agents.llm_clients import get_orchestrator, orchestrator
 from app.rag.indexer import RAGIndexer
 from app.memory.manager import MemoryManager
 from app.plugins.loader import PluginLoader
@@ -98,8 +98,8 @@ Think step by step. Use tools when needed. Be concise but thorough."""
         system_prompt += f"\n\nRelevant context:\n{rag_context}"
 
     messages = [
-        Message(role="system", content=system_prompt),
-        *state["messages"]
+        {"role": "system", "content": system_prompt},
+        *[m.model_dump() if hasattr(m, "model_dump") else m for m in state["messages"]]
     ]
 
     tools = []
@@ -226,18 +226,10 @@ def build_agent_graph():
     workflow.add_edge("action", "response")
     workflow.add_edge("response", END)
 
-    # Use SQLite checkpointer for persistence (sync version for compile)
-    import os
-    db_path = os.path.expanduser("~/.ele-agent/checkpoints.db")
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    
-    # Use sync SqliteSaver for compilation, async will be used at runtime
-    from langgraph.checkpoint.sqlite import SqliteSaver
-    import sqlite3
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    checkpointer = SqliteSaver(conn)
-
-    return workflow.compile(checkpointer=checkpointer)
+    # No checkpointer for now: AsyncSqliteSaver requires an async context and
+    # building the graph at import time is sync. The agent works without
+    # cross-turn persistence; we re-enable it once graph build is async-safe.
+    return workflow.compile()
 
 
 agent_graph = build_agent_graph()

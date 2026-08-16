@@ -316,13 +316,21 @@ class LLMOrchestrator:
         providers: List[str],
         tools: List[Dict] = None,
     ) -> AsyncGenerator[tuple[str, str], None]:
-        """Stream from multiple providers in parallel"""
-        # Get the last user message as prompt
+        """Stream from multiple providers in parallel.
+
+        Uses a queue so multiple async-generator producers can run concurrently
+        (asyncio.as_completed cannot be used because it requires awaitables,
+        not async generators).
+        """
         prompt = messages[-1]["content"] if messages else ""
         system = messages[0]["content"] if messages and messages[0]["role"] == "system" else None
 
-        # Create tasks for each provider
+        queue: asyncio.Queue = asyncio.Queue()
+        SENTINEL = object()
+
         async def stream_provider(provider_name: str):
+            """Drain one provider's stream into the queue. Plain coroutine so
+            it can be gathered (async generators cannot)."""
             client = self.clients.get(provider_name)
             if not client:
                 return
@@ -335,26 +343,64 @@ class LLMOrchestrator:
                     system=system,
                     tools=tools,
                 ):
-                    yield (provider_name, chunk)
+                    await queue.put((provider_name, chunk))
             except Exception as e:
-                yield (provider_name, f"[Error: {str(e)}]")
+                await queue.put((provider_name, f"[Error: {str(e)}]"))
 
-        # Run all providers concurrently
-        tasks = [stream_provider(p) for p in providers]
-        for task in asyncio.as_completed(tasks):
-            async for item in task:
+        producers = [stream_provider(p) for p in providers if p in self.clients]
+
+        async def run_all():
+            if producers:
+                await asyncio.gather(*producers, return_exceptions=True)
+            await queue.put(SENTINEL)
+
+        runner_task = asyncio.create_task(run_all())
+
+        any_yielded = False
+        try:
+            while True:
+                item = await queue.get()
+                if item is SENTINEL:
+                    break
+                any_yielded = True
                 yield item
+        finally:
+            if not runner_task.done():
+                runner_task.cancel()
+
+        # Fallback: nothing produced (no keys set / all providers failed)
+        if not any_yielded:
+            yield ("demo", self._demo_response(prompt))
+
+    def _demo_response(self, prompt: str) -> str:
+        """Canned response used when no LLM provider is available."""
+        return (
+            "I'm running in **demo mode** because no LLM provider API key is "
+            "configured and no local Ollama server was found.\n\n"
+            f"You asked: {prompt}\n\n"
+            "### To enable real responses\n"
+            "1. **Groq (free, fast, recommended):** get a key at "
+            "https://console.groq.com/keys and set `GROQ_API_KEY` in "
+            "`backend/.env`\n"
+            "2. **OR Ollama (offline, local):** install from "
+            "https://ollama.com then run `ollama pull llama3.2:1b` "
+            "(a small ~1GB model) and start `ollama serve`\n\n"
+            "Restart the backend after setting the key.\n\n"
+            "**Tool calling** (file/shell/browser) works once a real model "
+            "is answering."
+        )
 
     def _get_model_for_provider(self, provider: str) -> str:
         config = settings.get_llm_provider_config(provider)
         return config.model if config else provider
 
     async def merge_responses(self, responses: Dict[str, str]) -> str:
-        """Heuristic merge: pick longest/best response"""
+        """Heuristic merge: pick the best non-error response by length."""
         if not responses:
             return ""
-        # Simple heuristic: longest response
-        return max(responses.values(), key=len)
+        valid = {k: v for k, v in responses.items() if not v.startswith("[Error:")}
+        pool = valid if valid else responses
+        return max(pool.values(), key=len)
 
 
 # Global orchestrator (lazy singleton)
