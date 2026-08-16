@@ -5,6 +5,19 @@ from datetime import datetime
 from uuid import UUID
 
 
+class MessageRole(str):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL_RESULT = "tool_result"
+
+
+class ToolDeclaration(BaseModel):
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+
+
 class Message(BaseModel):
     role: Literal["user", "assistant", "system", "tool"]
     content: str

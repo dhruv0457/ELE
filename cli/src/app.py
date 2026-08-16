@@ -227,6 +227,11 @@ class ELEApp(App):
                 screen.focus()
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point for the CLI."""
     app = ELEApp()
     app.run()
+
+
+if __name__ == "__main__":
+    main()
