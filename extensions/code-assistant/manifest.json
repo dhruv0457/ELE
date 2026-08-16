@@ -1,0 +1,15 @@
+{
+  "id": "code-assistant",
+  "name": "Code Assistant",
+  "version": "2.1.0",
+  "description": "Write, debug, refactor, and test code across multiple languages",
+  "author": "ele-team",
+  "entry_point": "main.py",
+  "permissions": ["file:read", "file:write", "shell:run", "browser:navigate"],
+  "config_schema": {
+    "default_language": { "type": "string", "default": "python" },
+    "auto_format": { "type": "boolean", "default": true },
+    "run_tests": { "type": "boolean", "default": true },
+    "linter": { "type": "string", "default": "ruff", "enum": ["ruff", "pylint", "flake8", "none"] }
+  }
+}

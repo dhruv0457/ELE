@@ -1,0 +1,412 @@
+/* ELE Agent CLI - Textual CSS */
+
+$primary: #0066ff;
+$success: #10b981;
+$warning: #f59e0b;
+$error: #ef4444;
+$accent: #8b5cf6;
+$surface: #1e1e2e;
+$text: #cdd6f4;
+$text-muted: #6c7086;
+
+/* Base */
+Screen {
+    background: $surface;
+    color: $text;
+}
+
+/* Header */
+Header {
+    background: $surface;
+    color: $text;
+    border-bottom: solid $primary;
+    height: 1;
+}
+
+Header:focus {
+    border-bottom: double $primary;
+}
+
+/* Footer */
+Footer {
+    background: $surface;
+    color: $text-muted;
+    border-top: solid $primary;
+    height: 1;
+}
+
+/* Buttons */
+Button {
+    background: $surface;
+    color: $text;
+    border: solid $primary;
+    min-width: 10;
+}
+
+Button:hover {
+    background: $primary;
+    color: $surface;
+}
+
+Button:focus {
+    border: double $primary;
+}
+
+Button.-primary {
+    background: $primary;
+    color: $surface;
+}
+
+Button.-primary:hover {
+    background: #0052cc;
+}
+
+Button.-warning {
+    background: $warning;
+    color: $surface;
+}
+
+Button.-error {
+    background: $error;
+    color: $surface;
+}
+
+/* Input */
+Input, TextArea {
+    background: $surface;
+    color: $text;
+    border: solid $primary;
+}
+
+Input:focus, TextArea:focus {
+    border: double $primary;
+}
+
+/* Select */
+Select {
+    background: $surface;
+    color: $text;
+    border: solid $primary;
+}
+
+Select:focus {
+    border: double $primary;
+}
+
+/* ListView */
+ListView {
+    background: $surface;
+    border: solid $primary;
+}
+
+ListView > .list-view--item {
+    background: $surface;
+    color: $text;
+}
+
+ListView > .list-view--item.--highlight {
+    background: $primary;
+    color: $surface;
+}
+
+/* Tree */
+Tree {
+    background: $surface;
+    border: solid $primary;
+}
+
+Tree > .tree--node {
+    color: $text;
+}
+
+Tree > .tree--node.--highlight {
+    background: $primary;
+    color: $surface;
+}
+
+/* Collapsible */
+Collapsible {
+    background: $surface;
+    border: solid $primary;
+}
+
+Collapsible > .collapsible--title {
+    text-style: bold;
+    color: $primary;
+}
+
+/* Static */
+Static {
+    color: $text;
+}
+
+/* Label */
+Label {
+    color: $text;
+}
+
+/* Container */
+Container {
+    background: $surface;
+}
+
+/* Horizontal / Vertical */
+Horizontal, Vertical {
+    background: $surface;
+}
+
+/* TabbedContent */
+TabbedContent {
+    background: $surface;
+}
+
+TabbedContent > .tabbed-content--tab-bar {
+    background: $surface;
+    border-bottom: solid $primary;
+}
+
+TabbedContent > .tabbed-content--tab-bar > .tabbed-content--tab {
+    color: $text-muted;
+}
+
+TabbedContent > .tabbed-content--tab-bar > .tabbed-content--tab.--active {
+    color: $primary;
+    text-style: bold;
+    border-bottom: solid $primary;
+}
+
+/* Switch */
+Switch {
+    background: $surface;
+    border: solid $primary;
+}
+
+Switch.--on {
+    background: $primary;
+}
+
+/* Scrollbar */
+.scrollbar {
+    background: $surface;
+}
+
+.scrollbar--slider {
+    background: $primary;
+}
+
+/* Tooltip */
+.tooltip {
+    background: $surface;
+    border: solid $primary;
+    color: $text;
+}
+
+/* Notification */
+.notification {
+    background: $surface;
+    border: solid $primary;
+    color: $text;
+}
+
+.notification.--information {
+    border-left: solid $primary;
+}
+
+.notification.--warning {
+    border-left: solid $warning;
+}
+
+.notification.--error {
+    border-left: solid $error;
+}
+
+/* DataTable */
+DataTable {
+    background: $surface;
+    border: solid $primary;
+}
+
+DataTable > .datatable--header {
+    background: $primary;
+    color: $surface;
+}
+
+DataTable > .datatable--row {
+    background: $surface;
+    color: $text;
+}
+
+DataTable > .datatable--row.--highlight {
+    background: $primary;
+    color: $surface;
+}
+
+/* Markdown */
+.markdown {
+    color: $text;
+}
+
+.markdown h1, .markdown h2, .markdown h3 {
+    color: $primary;
+    text-style: bold;
+}
+
+.markdown code {
+    background: $surface;
+    color: $accent;
+    padding: 0 1;
+}
+
+.markdown pre {
+    background: $surface;
+    border: solid $primary;
+    padding: 1;
+}
+
+/* Custom Classes */
+.sidebar {
+    background: $surface;
+    border-right: solid $primary;
+}
+
+.sidebar-title {
+    text-style: bold;
+    color: $primary;
+    margin: 1 0;
+}
+
+.chat_layout {
+    layout: horizontal;
+    height: 1fr;
+}
+
+.chat_area {
+    width: 1fr;
+    layout: vertical;
+    height: 1fr;
+}
+
+.messages_container {
+    height: 1fr;
+    border: solid $primary;
+    margin: 1;
+}
+
+.input_bar {
+    height: auto;
+    min-height: 5;
+    border-top: solid $primary;
+    padding: 1;
+}
+
+.input_area {
+    width: 1fr;
+    min-height: 3;
+}
+
+.voice_btn, .send_btn {
+    margin-left: 1;
+}
+
+.user-message {
+    background: $primary;
+    color: $surface;
+    margin-left: 20%;
+}
+
+.assistant-message {
+    background: $surface;
+    border: solid $primary;
+}
+
+.message-header {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.message-role {
+    text-style: bold;
+    color: $primary;
+}
+
+.message-time {
+    color: $text-muted;
+    text-style: dim;
+}
+
+.message-content {
+    margin: 1 0;
+    white-space: pre-wrap;
+}
+
+.thoughts-section {
+    border-left: solid $primary;
+    margin-left: 1;
+    padding-left: 1;
+}
+
+.thought-line {
+    color: $text-muted;
+}
+
+.tools-used {
+    margin-top: 1;
+}
+
+.tool-badge {
+    background: $primary;
+    color: $surface;
+    padding: 0 1;
+    margin-right: 1;
+}
+
+.streaming-indicator {
+    color: $warning;
+    text-style: bold blink;
+}
+
+.setting-group {
+    margin: 1 0;
+    padding: 1;
+    border: solid $primary;
+}
+
+.setting-label {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.setting-item {
+    margin: 1 0;
+}
+
+.plugin-item {
+    margin: 1 0;
+    padding: 1;
+    border: solid $primary;
+}
+
+.plugin-enabled {
+    background: $success;
+    color: $text;
+}
+
+.plugin-disabled {
+    background: $error;
+    color: $text;
+}
+
+.tools_sidebar {
+    width: 40;
+    border-right: solid $primary;
+    height: 1fr;
+}
+
+.tools_content {
+    width: 1fr;
+    height: 1fr;
+}
+
+.tool-tab {
+    margin: 1;
+}

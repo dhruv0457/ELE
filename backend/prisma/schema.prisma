@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-py"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  hashedPassword String
+  fullName      String?
+  avatarUrl     String?
+  tier          String    @default("FREE")
+  creditsDaily  Int       @default(100)
+  creditsUsed   Int       @default(0)
+  creditsReset  DateTime  @default(now())
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  apiKeys       ApiKey[]
+  chats         Chat[]
+  messages      Message[]
+  plugins       UserPlugin[]
+  memories      Memory[]
+  usageLogs     UsageLog[]
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  refreshToken String?  @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([token])
+}
+
+model ApiKey {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider    String
+  keyHash     String
+  keyPrefix   String
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+model Chat {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  model     String?
+  provider  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages  Message[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Message {
+  id           String   @id @default(uuid())
+  chatId       String
+  chat         Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         String
+  content      String
+  toolCalls    String?
+  toolResults  String?
+  metadata     String?
+  createdAt    DateTime @default(now())
+
+  @@index([chatId])
+  @@index([userId])
+}
+
+model UserPlugin {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pluginId    String
+  enabled     Boolean  @default(true)
+  config      String?
+  installedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, pluginId])
+  @@index([userId])
+}
+
+model Memory {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String
+  value     String
+  namespace String   @default("default")
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, namespace])
+  @@index([expiresAt])
+}
+
+model UsageLog {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider        String
+  model           String
+  promptTokens    Int
+  completionTokens Int
+  cost            Float
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}

@@ -1,0 +1,11 @@
+{
+  "name": "python-code-assistant",
+  "version": "2.1.0",
+  "description": "Write, debug, refactor Python code with AI",
+  "author": "@ele-team",
+  "entry_point": "main:PythonCodeAssistant",
+  "permissions": ["file:read", "file:write", "shell:run"],
+  "config_schema": {
+    "default_model": {"type": "string", "default": "gpt-4o"}
+  }
+}

@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run tests
+        run: |
+          cd backend
+          python -m pytest tests/ -v
+      - name: Lint
+        run: |
+          cd backend
+          python -m ruff check .
+      - name: Type check
+        run: |
+          cd backend
+          python -m mypy .
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: |
+          cd web
+          npm ci
+      - name: Build
+        run: |
+          cd web
+          npm run build
+      - name: Lint
+        run: |
+          cd web
+          npm run lint
+      - name: Type check
+        run: |
+          cd web
+          npm run type-check
+
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install dependencies
+        run: |
+          cd desktop
+          npm ci
+      - name: Build
+        run: |
+          cd desktop
+          npm run build
+
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CLI
+        run: |
+          cd cli
+          pip install -e .
+      - name: Test CLI
+        run: |
+          ele --help

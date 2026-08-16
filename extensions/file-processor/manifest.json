@@ -1,0 +1,18 @@
+{
+  "id": "file-processor",
+  "name": "File Processor",
+  "version": "1.0.0",
+  "description": "Advanced file operations: read, write, search, convert, batch process",
+  "author": "ele-team",
+  "entry_point": "main.py",
+  "permissions": ["file:read", "file:write", "file:delete", "file:list", "shell:run"],
+  "config_schema": {
+    "max_file_size_mb": { "type": "number", "default": 100 },
+    "allowed_extensions": { "type": "array", "items": { "type": "string" }, "default": ["*"] },
+    "backup_on_write": { "type": "boolean", "default": true }
+  },
+  "hooks": {
+    "on_file_read": { "command": "echo 'Reading file: {path}'" },
+    "on_file_write": { "command": "echo 'Writing file: {path}'" }
+  }
+}

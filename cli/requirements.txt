@@ -1,0 +1,22 @@
+# CLI Requirements
+textual==0.84.0
+textual-dev==0.84.0
+pydantic==2.10.0
+pydantic-settings==2.6.0
+tomli==2.2.0
+tomli-w==1.1.0
+watchfiles==1.2.0
+rich==15.0.0
+pyyaml==6.0.3
+python-dateutil==2.9.0
+
+# Voice
+sounddevice==0.5.5
+pvporcupine==4.0.3
+vosk==0.3.45
+pyttsx3==2.99
+edge-tts==7.2.0
+onnxruntime==1.28.0
+
+# Terminal
+asyncio

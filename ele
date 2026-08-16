@@ -1,0 +1,18 @@
+#!/usr/bin/env python
+"""ELE Agent CLI Entry Point"""
+import sys
+import os
+
+# Add cli/src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "cli", "src"))
+
+from cli.src.app import ELEApp
+
+
+def main():
+    app = ELEApp()
+    app.run()
+
+
+if __name__ == "__main__":
+    main()

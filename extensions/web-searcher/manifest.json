@@ -1,0 +1,14 @@
+{
+  "id": "web-searcher",
+  "name": "Web Searcher",
+  "version": "1.0.0",
+  "description": "Search the web, scrape pages, extract structured data",
+  "author": "ele-team",
+  "entry_point": "main.py",
+  "permissions": ["browser:navigate", "browser:click", "browser:extract", "browser:screenshot", "file:write"],
+  "config_schema": {
+    "default_engine": { "type": "string", "default": "duckduckgo", "enum": ["duckduckgo", "google", "bing"] },
+    "timeout_seconds": { "type": "number", "default": 30 },
+    "max_results": { "type": "number", "default": 10 }
+  }
+}
