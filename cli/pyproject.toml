@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-ele = "cli.src.app:main"
+ele = "src.app:main"
 
 [tool.ruff]
 target-version = "py311"

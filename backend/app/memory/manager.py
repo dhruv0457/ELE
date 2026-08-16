@@ -3,18 +3,32 @@ import os
 import json
 import time
 import asyncio
+import sqlite3
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from collections import deque
 from dataclasses import dataclass, asdict
 from datetime import datetime
+import uuid as _uuid
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from contextlib import contextmanager
 
 from app.config.settings import settings
 from app.rag.indexer import RAGIndexer
+from app.rag.embedder import get_embedder, FALLBACK_DIM
+
+
+@contextmanager
+def _open_db(path):
+    """Open a sqlite connection that actually closes (unlike `with conn`)."""
+    conn = sqlite3.connect(str(path))
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @dataclass
@@ -69,12 +83,22 @@ class ShortTermMemory:
 class LongTermMemory:
     """FAISS Vector Store for facts and knowledge"""
 
-    def __init__(self, index_path: str, embedding_model: str = "bge-small"):
-        self.index_path = Path(os.path.expanduser(index_path))
+    def __init__(self, index_path: str = None, embedding_model: str = "bge-small"):
+        data_dir = os.environ.get("DATA_DIR")
+        if index_path:
+            base = Path(os.path.expanduser(index_path))
+        elif data_dir:
+            base = Path(os.path.expanduser(data_dir)) / "memory" / "faiss"
+        else:
+            base = Path(os.path.expanduser(settings.memory.long_term.index_path))
+        self.index_path = base
         self.index_path.mkdir(parents=True, exist_ok=True)
 
-        self.embedder = SentenceTransformer(embedding_model)
-        self.dimension = self.embedder.get_sentence_embedding_dimension()
+        self.embedder = get_embedder(embedding_model, dim=FALLBACK_DIM)
+        try:
+            self.dimension = self.embedder.get_sentence_embedding_dimension()
+        except Exception:
+            self.dimension = FALLBACK_DIM
 
         self.index = self._load_index()
         self.metadata: List[Dict[str, Any]] = self._load_metadata()
@@ -140,74 +164,88 @@ class LongTermMemory:
 class EpisodicMemory:
     """SQLite for action outcomes and lessons"""
 
-    def __init__(self, db_path: str, embedder: SentenceTransformer):
-        self.db_path = Path(os.path.expanduser(db_path))
+    def __init__(self, db_path: str = None, embedder=None):
+        data_dir = os.environ.get("DATA_DIR")
+        if db_path:
+            self.db_path = Path(os.path.expanduser(db_path))
+        elif data_dir:
+            self.db_path = Path(os.path.expanduser(data_dir)) / "memory" / "episodic.db"
+        else:
+            self.db_path = Path(os.path.expanduser(settings.memory.episodic.db_path))
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.embedder = embedder
         self._init_db()
 
     def _init_db(self):
-        import sqlite3
-        with sqlite3.connect(self.db_path) as conn:
+        with _open_db(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS episodes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT,
                     action TEXT NOT NULL,
                     result TEXT NOT NULL,
                     success BOOLEAN NOT NULL,
+                    tool TEXT,
                     context TEXT,
                     tags TEXT,
                     embedding BLOB,
                     timestamp REAL NOT NULL
                 )
             """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_session ON episodes(session_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON episodes(timestamp)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_success ON episodes(success)")
 
-    async def record(self, action: str, result: str, success: bool,
-                     context: Dict = None, tags: List[str] = None):
-        import sqlite3
-        embedding = self.embedder.encode([f"Action: {action}\nResult: {result}"])[0]
+    async def record(self, session_id: str, action: str, result: str, success: bool,
+                     tool: str = None, tags: List[str] = None, context: Dict = None):
+        text = f"Action: {action}\nResult: {result}"
+        embedding = self.embedder.encode([text])[0] if self.embedder is not None else np.zeros(FALLBACK_DIM, dtype=np.float32)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with _open_db(self.db_path) as conn:
             conn.execute("""
-                INSERT INTO episodes (action, result, success, context, tags, embedding, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO episodes
+                (session_id, action, result, success, tool, context, tags, embedding, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                action, result, success,
+                session_id, action, result, success, tool,
                 json.dumps(context or {}),
                 json.dumps(tags or []),
                 embedding.astype(np.float32).tobytes(),
                 time.time()
             ))
 
-    async def recall(self, pattern: str, k: int = 10, success_only: bool = False) -> List[Dict[str, Any]]:
-        import sqlite3
-        query_embedding = self.embedder.encode([pattern])[0]
+    async def recall(self, session_id: str = None, pattern: str = None,
+                     k: int = 10, success_only: bool = False) -> List[Dict[str, Any]]:
+        where = []
+        params: List[Any] = []
+        if success_only:
+            where.append("success = 1")
+        if session_id:
+            where.append("session_id = ?")
+            params.append(session_id)
+        where_clause = " AND ".join(where) if where else "1=1"
 
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute("""
-                SELECT id, action, result, success, context, tags, embedding, timestamp
-                FROM episodes
-                WHERE success = ? OR ? = 1
-                ORDER BY timestamp DESC
-                LIMIT 1000
-            """, (success_only, success_only)).fetchall()
+        with _open_db(self.db_path) as conn:
+            rows = conn.execute(
+                f"""SELECT id, session_id, action, result, success, tool, context, tags, timestamp
+                    FROM episodes WHERE {where_clause}
+                    ORDER BY timestamp DESC LIMIT 1000""",
+                params
+            ).fetchall()
 
-        episodes = []
-        for row in rows:
-            ep_embedding = np.frombuffer(row[6], dtype=np.float32)
-            sim = np.dot(query_embedding, ep_embedding) / (
-                np.linalg.norm(query_embedding) * np.linalg.norm(ep_embedding)
-            )
-            episodes.append((sim, {
-                "id": row[0], "action": row[1], "result": row[2],
-                "success": row[3], "context": json.loads(row[4]),
-                "tags": json.loads(row[5]), "timestamp": row[7],
-            }))
+        if pattern:
+            pat = pattern.lower()
+            rows = [r for r in rows if pat in r[2].lower() or pat in r[3].lower()]
 
-        episodes.sort(key=lambda x: x[0], reverse=True)
-        return [ep for _, ep in episodes[:k]]
+        return [
+            {
+                "id": row[0], "session_id": row[1], "action": row[2],
+                "result": row[3], "success": bool(row[4]), "tool": row[5],
+                "context": json.loads(row[6]), "tags": json.loads(row[7]),
+                "timestamp": row[8],
+            }
+            for row in rows[:k]
+        ]
 
 
 class ProjectMemory:
@@ -278,7 +316,7 @@ class MemoryManager:
     """Unified memory interface"""
 
     def __init__(self):
-        embedder = SentenceTransformer(settings.memory.long_term.embedding_model)
+        embedder = get_embedder(settings.memory.long_term.embedding_model, dim=FALLBACK_DIM)
 
         self.short_term = ShortTermMemory(
             max_turns=settings.memory.short_term.max_turns,
@@ -288,15 +326,187 @@ class MemoryManager:
             settings.memory.long_term.index_path,
             settings.memory.long_term.embedding_model
         )
-        self.episodic = EpisodicMemory(
-            settings.memory.episodic.db_path,
-            embedder
-        )
+        data_dir_env = os.environ.get("DATA_DIR")
+        episodic_db = None if data_dir_env else settings.memory.episodic.db_path
+        self.episodic = EpisodicMemory(episodic_db, embedder)
         self.project = ProjectMemory(
             settings.memory.project.watch_paths,
             settings.memory.project.marker_files
         )
         self.rag = RAGIndexer()
+
+        # Per-session short-term buffers (test contract: session-scoped)
+        self._sessions: Dict[str, ShortTermMemory] = {}
+
+        # SQLite store for long-term KV and projects
+        data_dir = os.environ.get("DATA_DIR")
+        if data_dir:
+            base = Path(os.path.expanduser(data_dir)) / "memory"
+        else:
+            base = Path(os.path.expanduser(settings.DATA_DIR)) / "memory"
+        base.mkdir(parents=True, exist_ok=True)
+        self._store_path = base / "manager.db"
+        self._init_store()
+
+    def _init_store(self):
+        with _open_db(self._store_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS long_term (
+                    user_id TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT,
+                    tags TEXT,
+                    confidence REAL,
+                    timestamp REAL NOT NULL,
+                    PRIMARY KEY (user_id, key)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    files TEXT,
+                    todos TEXT,
+                    timestamp REAL NOT NULL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id)")
+
+    def _session(self, session_id: str) -> ShortTermMemory:
+        if session_id not in self._sessions:
+            self._sessions[session_id] = ShortTermMemory(
+                max_turns=settings.memory.short_term.max_turns,
+                dynamic=settings.memory.short_term.dynamic
+            )
+        return self._sessions[session_id]
+
+    async def short_term_add(self, session_id: str, message: Dict[str, Any]) -> None:
+        self._session(session_id).add(message)
+
+    async def short_term_get(self, session_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        messages = list(self._session(session_id).buffer)
+        if limit is not None:
+            messages = messages[:limit]
+        return messages
+
+    async def short_term_clear(self, session_id: str) -> None:
+        self._session(session_id).clear()
+
+    async def long_term_set(self, user_id: str, key: str, value: Any,
+                            tags: List[str] = None, confidence: float = 1.0) -> None:
+        with _open_db(self._store_path) as conn:
+            conn.execute("""
+                INSERT INTO long_term (user_id, key, value, tags, confidence, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, key) DO UPDATE SET
+                    value=excluded.value, tags=excluded.tags,
+                    confidence=excluded.confidence, timestamp=excluded.timestamp
+            """, (
+                user_id, key, json.dumps(value) if not isinstance(value, str) else value,
+                json.dumps(tags or []), confidence, time.time()
+            ))
+
+    async def long_term_get(self, user_id: str, key: str) -> Any:
+        with _open_db(self._store_path) as conn:
+            row = conn.execute(
+                "SELECT value FROM long_term WHERE user_id=? AND key=?",
+                (user_id, key)
+            ).fetchone()
+        if row is None:
+            return None
+        value = row[0]
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return value
+
+    async def long_term_search(self, user_id: str, query: str, k: int = 5) -> List[Dict[str, Any]]:
+        like = f"%{query.lower()}%"
+        with _open_db(self._store_path) as conn:
+            rows = conn.execute(
+                "SELECT user_id, key, value, tags, confidence FROM long_term "
+                "WHERE user_id=? AND LOWER(value) LIKE ? LIMIT ?",
+                (user_id, like, k)
+            ).fetchall()
+        results = []
+        for row in rows:
+            value = row[2]
+            try:
+                parsed = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                parsed = value
+            results.append({
+                "user_id": row[0], "key": row[1], "value": parsed,
+                "tags": json.loads(row[3] or "[]"), "confidence": row[4],
+            })
+        return results
+
+    async def episodic_record(self, session_id: str, action: str, result: str,
+                              success: bool, tool: str = None,
+                              tags: List[str] = None) -> None:
+        await self.episodic.record(session_id, action, result, success, tool=tool, tags=tags)
+
+    async def episodic_recall(self, session_id: str, pattern: str = None,
+                              limit: int = 10) -> List[Dict[str, Any]]:
+        return await self.episodic.recall(session_id=session_id, pattern=pattern, k=limit)
+
+    async def project_create(self, user_id: str, name: str,
+                             description: str = None) -> str:
+        project_id = f"proj_{_uuid.uuid4().hex[:12]}"
+        with _open_db(self._store_path) as conn:
+            conn.execute(
+                "INSERT INTO projects (id, user_id, name, description, files, todos, timestamp) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (project_id, user_id, name, description, json.dumps([]), json.dumps([]), time.time())
+            )
+        return project_id
+
+    async def project_get(self, project_id: str) -> Optional[Dict[str, Any]]:
+        with _open_db(self._store_path) as conn:
+            row = conn.execute(
+                "SELECT id, user_id, name, description, files, todos, timestamp FROM projects WHERE id=?",
+                (project_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0], "user_id": row[1], "name": row[2],
+            "description": row[3],
+            "files": json.loads(row[4] or "[]"),
+            "todos": json.loads(row[5] or "[]"),
+            "timestamp": row[6],
+        }
+
+    async def project_update_files(self, project_id: str, files: List[str]) -> None:
+        with _open_db(self._store_path) as conn:
+            conn.execute(
+                "UPDATE projects SET files=?, timestamp=? WHERE id=?",
+                (json.dumps(files), time.time(), project_id)
+            )
+
+    async def project_update_todos(self, project_id: str, todos: List[Dict[str, Any]]) -> None:
+        with _open_db(self._store_path) as conn:
+            conn.execute(
+                "UPDATE projects SET todos=?, timestamp=? WHERE id=?",
+                (json.dumps(todos), time.time(), project_id)
+            )
+
+    async def project_list(self, user_id: str) -> List[Dict[str, Any]]:
+        with _open_db(self._store_path) as conn:
+            rows = conn.execute(
+                "SELECT id, user_id, name, description, files, todos, timestamp FROM projects WHERE user_id=? ORDER BY timestamp",
+                (user_id,)
+            ).fetchall()
+        return [
+            {
+                "id": row[0], "user_id": row[1], "name": row[2],
+                "description": row[3], "files": json.loads(row[4] or "[]"),
+                "todos": json.loads(row[5] or "[]"), "timestamp": row[6],
+            }
+            for row in rows
+        ]
 
     async def get_context(self, query: str, project: str = None, max_tokens: int = 2000) -> str:
         parts = []
@@ -313,7 +523,7 @@ class MemoryManager:
         if ltm_results:
             parts.append("\n## Relevant Memories")
             for r in ltm_results:
-                parts.append(f"- {r['text'][:200]}")
+                parts.append(f"- {r.get('text', '')[:200]}")
 
         # Project
         if project:
@@ -322,7 +532,7 @@ class MemoryManager:
                 parts.append(f"\n## Project Context\n{proj_ctx}")
 
         # Episodic
-        episodes = await self.episodic.recall(query, k=3, success_only=True)
+        episodes = await self.episodic.recall(pattern=query, k=3, success_only=True)
         if episodes:
             parts.append("\n## Lessons Learned")
             for ep in episodes:

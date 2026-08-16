@@ -1,15 +1,28 @@
 """Agent Schemas"""
 from typing import Optional, List, Dict, Any, Literal
+from enum import Enum
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
 
 
-class MessageRole(str):
+class MessageRole(str, Enum):
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
     TOOL_RESULT = "tool_result"
+
+
+class ProviderName(str, Enum):
+    AUTO = "auto"
+    OPENAI = "openai"
+    GEMINI = "gemini"
+    GROQ = "groq"
+    NVIDIA = "nvidia"
+    ANTHROPIC = "anthropic"
+    CLAUDE = "claude"
+    OLLAMA = "ollama"
+    OPENCLAW = "openclaw"
 
 
 class ToolDeclaration(BaseModel):
@@ -19,16 +32,18 @@ class ToolDeclaration(BaseModel):
 
 
 class Message(BaseModel):
-    role: Literal["user", "assistant", "system", "tool"]
+    role: Literal["user", "assistant", "system", "tool", "tool_result"]
     content: str
+    name: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = {}
 
 
 class ChatRequest(BaseModel):
     message: str
+    interface: str = "web"
     session_id: Optional[str] = None
-    model_preference: str = "auto"
+    model_preference: ProviderName = ProviderName.AUTO
     tools_allowed: List[str] = Field(default_factory=lambda: ["file", "browser", "shell"])
     stream: bool = False
 
@@ -113,7 +128,3 @@ AnyWSEvent = (
     ScreenshotEvent | ProgressEvent | FinalEvent |
     ConfirmationEvent | ErrorEvent | PongEvent
 )
-
-
-# Provider Names
-ProviderName = Literal["auto", "openai", "gemini", "groq", "nvidia", "claude", "ollama", "openclaw"]

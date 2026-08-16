@@ -261,6 +261,7 @@ class LLMConfig(BaseSettings):
 
 
 class AppConfig(BaseSettings):
+    app_name: str = "ELE Agent"
     theme: str = "tokyo-night"
     language: str = "en"
     auto_update: bool = True
@@ -357,6 +358,14 @@ class Settings(BaseSettings):
             data.pop(field, None)
         with open(config_path, "wb") as f:
             tomli_w.dump(data, f)
+
+    @property
+    def APP_NAME(self) -> str:
+        return self.app.app_name
+
+    @property
+    def VERSION(self) -> str:
+        return self.app.version
 
     def get_llm_provider_config(self, provider: str) -> Optional[LLMProviderConfig]:
         return self.llm.providers.get(provider)
