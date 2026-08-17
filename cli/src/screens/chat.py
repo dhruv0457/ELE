@@ -1,14 +1,18 @@
 """Chat Screen"""
+import asyncio
+import uuid
+
 from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Static, ListView, ListItem, TextArea, Button
+from textual.widgets import Static, ListView, ListItem, TextArea, Button, Label
 from textual import events
 
-from ..store import store
+from ..store import store, Message
 from ..widgets.message_bubble import MessageBubble
+from .. import backend as be
 
 
 class ChatScreen(Container):
-    """Chat Mode Screen"""
+    """Chat Mode Screen - talks to the backend over WebSocket."""
 
     DEFAULT_CSS = """
     ChatScreen {
@@ -61,7 +65,19 @@ class ChatScreen(Container):
     .voice_btn, .send_btn {
         margin-left: 1;
     }
+
+    .status-line {
+        color: $text-muted;
+        text-style: dim;
+        height: 1;
+    }
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._token = None
+        self._session_id = None
+        self._auth_task = None
 
     def compose(self):
         yield Container(
@@ -78,6 +94,7 @@ class ChatScreen(Container):
                 id="messages_container",
             ),
             Container(
+                Static("Backend: connecting...", id="status_line", classes="status-line"),
                 Horizontal(
                     TextArea(id="input_area", classes="input_area"),
                     Button("🎤", id="voice_btn", classes="voice_btn"),
@@ -90,15 +107,29 @@ class ChatScreen(Container):
 
     def on_mount(self):
         self.load_messages()
+        self._auth_task = asyncio.create_task(self._connect_backend())
+
+    async def _connect_backend(self):
+        status = self.query_one("#status_line", Static)
+        try:
+            if not be.is_backend_up():
+                status.update("Backend: NOT running. Start with: python -m uvicorn app.main:app --port 8000")
+                store.set_backend_status(False, "down")
+                return
+            tok = be.login_or_register()
+            self._token = tok["access_token"]
+            self._session_id = f"session_{uuid.uuid4().hex[:8]}"
+            store.set_backend_status(True, "connected")
+            status.update(f"Backend: connected as {tok['email']}")
+        except Exception as e:
+            store.set_backend_status(False, "error")
+            status.update(f"Backend: error - {e}")
 
     def load_messages(self):
         messages_list = self.query_one("#messages_list", expect_type=ListView)
         messages_list.clear()
-
         for msg in store.messages:
-            bubble = MessageBubble(msg)
-            self.query_one("#messages_list").append(ListItem(bubble))
-
+            self.query_one("#messages_list").append(ListItem(MessageBubble(msg)))
         self.call_later(self.scroll_to_bottom)
 
     def scroll_to_bottom(self):
@@ -120,11 +151,7 @@ class ChatScreen(Container):
         text = input_area.text.strip()
         if not text:
             return
-
         input_area.clear()
-
-        from ..store import Message
-        import uuid
 
         user_msg = Message(
             id=f"msg_{uuid.uuid4().hex[:8]}",
@@ -134,50 +161,93 @@ class ChatScreen(Container):
         store.add_message(user_msg)
         self.add_message_bubble(user_msg)
 
-        self.show_thinking()
-        self.simulate_response(text)
+        if not self._token and self._auth_task is not None:
+            try:
+                await asyncio.wait_for(asyncio.shield(self._auth_task), timeout=15)
+            except (asyncio.TimeoutError, Exception):
+                pass
 
-    def add_message_bubble(self, msg):
-        from ..widgets.message_bubble import MessageBubble
-        from textual.widgets import ListItem
-        bubble = MessageBubble(msg)
-        self.query_one("#messages_list").append(ListItem(bubble))
-        self.scroll_to_bottom()
-
-    def show_thinking(self):
-        from ..store import Message
         thinking_msg = Message(
             id="thinking",
             role="assistant",
-            content="",
+            content="...",
             is_streaming=True,
         )
         store.add_message(thinking_msg)
-        self.add_message_bubble(thinking_msg)
+        bubble = self.add_message_bubble(thinking_msg)
 
-    def simulate_response(self, user_text: str):
-        import asyncio
+        if not self._token:
+            thinking_msg.content = "Backend not connected. Start it on :8000."
+            thinking_msg.is_streaming = False
+            self._refresh_bubble(bubble, thinking_msg)
+            return
 
-        async def delayed_response():
-            await asyncio.sleep(1)
-            from ..store import Message
-            import uuid
+        asyncio.create_task(self._stream_response(text, thinking_msg, bubble))
 
-            # Remove thinking message
-            store.messages = [m for m in store.messages if m.id != "thinking"]
+    def add_message_bubble(self, msg):
+        bubble = MessageBubble(msg)
+        self.query_one("#messages_list").append(ListItem(bubble))
+        self.scroll_to_bottom()
+        return bubble
 
-            response = f"I'll help you with: {user_text}\n\nHere's a sample response with code:\n\n```python\ndef hello():\n    print('Hello, World!')\n```"
-            msg = Message(
-                id=f"msg_{uuid.uuid4().hex[:8]}",
-                role="assistant",
-                content=response,
-                thoughts=["Planning response", "Generating code example"],
-                tools_used=["file", "shell"],
-            )
-            store.add_message(msg)
-            self.add_message_bubble(msg)
+    def _refresh_bubble(self, bubble, msg):
+        try:
+            bubble.update_content(msg.content)
+        except Exception:
+            pass
 
-        asyncio.create_task(delayed_response())
+    async def _stream_response(self, user_text, thinking_msg, bubble):
+        """Stream events from the backend and update the thinking bubble live."""
+        thoughts_acc = []
+        tools_acc = []
+        content_acc = ""
+
+        try:
+            async for evt in be.stream_chat(
+                user_text, self._token, session_id=self._session_id,
+            ):
+                t = evt.get("type")
+                if t == "thought":
+                    thoughts_acc.append(evt.get("content", ""))
+                    preview = "...\n".join(f"◉ {x}" for x in thoughts_acc[-3:])
+                    thinking_msg.content = preview + "\n(thinking...)"
+                    self._refresh_bubble(bubble, thinking_msg)
+                elif t == "tool_start":
+                    tools_acc.append(evt.get("tool", ""))
+                    thinking_msg.content = (
+                        "...\n".join(f"◉ {x}" for x in thoughts_acc[-3:])
+                        + f"\n🔧 running {evt.get('tool')}..."
+                    )
+                    self._refresh_bubble(bubble, thinking_msg)
+                elif t == "tool_result":
+                    out = evt.get("output") or evt.get("error") or ""
+                    if isinstance(out, str):
+                        out = out[:200].replace("\n", " ")
+                    thinking_msg.content = (
+                        "...\n".join(f"◉ {x}" for x in thoughts_acc[-3:])
+                        + f"\n🔧 {evt.get('tool')} -> {out}"
+                    )
+                    self._refresh_bubble(bubble, thinking_msg)
+                elif t == "final":
+                    content_acc = evt.get("content", "")
+                    meta = evt.get("metadata", {}) or {}
+                    if meta.get("thoughts"):
+                        thoughts_acc = meta["thoughts"]
+                    if meta.get("tools_used"):
+                        tools_acc = meta["tools_used"]
+                    break
+                elif t == "error":
+                    content_acc = f"[error] {evt.get('message', 'unknown')}"
+                    break
+        except Exception as e:
+            content_acc = f"[error] connection failed: {e}"
+
+        thinking_msg.id = f"msg_{uuid.uuid4().hex[:8]}"
+        thinking_msg.content = content_acc or "(no response)"
+        thinking_msg.thoughts = thoughts_acc
+        thinking_msg.tools_used = tools_acc
+        thinking_msg.is_streaming = False
+        self._refresh_bubble(bubble, thinking_msg)
 
     def toggle_voice(self):
         store.voice_listening = not store.voice_listening

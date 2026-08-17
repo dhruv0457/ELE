@@ -243,21 +243,11 @@ DataTable > .datatable--row.--highlight {
 
 /* Markdown */
 .markdown {
-    color: $text;
-}
-
-.markdown h1, .markdown h2, .markdown h3 {
     color: $primary;
     text-style: bold;
 }
 
-.markdown code {
-    background: $surface;
-    color: $accent;
-    padding: 0 1;
-}
-
-.markdown pre {
+.markdown-pre {
     background: $surface;
     border: solid $primary;
     padding: 1;
@@ -311,7 +301,7 @@ DataTable > .datatable--row.--highlight {
 .user-message {
     background: $primary;
     color: $surface;
-    margin-left: 20%;
+    margin: 0 20;
 }
 
 .assistant-message {
@@ -336,7 +326,6 @@ DataTable > .datatable--row.--highlight {
 
 .message-content {
     margin: 1 0;
-    white-space: pre-wrap;
 }
 
 .thoughts-section {

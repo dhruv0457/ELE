@@ -76,52 +76,94 @@ class ELEApp(App):
     def apply_theme(self, theme_name: str):
         """Apply a theme"""
         theme_map = {
-            "tokyo-night": "tokyo_night",
-            "catppuccin": "catppuccin_mocha",
+            "tokyo-night": "tokyo-night",
+            "catppuccin": "catppuccin-mocha",
             "dracula": "dracula",
-            "gruvbox": "gruvbox_dark",
+            "gruvbox": "gruvbox",
             "nord": "nord",
-            "solarized": "solarized_dark",
-            "one-dark": "one_dark",
+            "solarized": "solarized-dark",
+            "one-dark": "atom-one-dark",
             "monokai": "monokai",
-            "github-dark": "github_dark",
+            "github-dark": "flexoki",
         }
-        textual_theme = theme_map.get(theme_name, "tokyo_night")
-        self.theme = textual_theme
+        textual_theme = theme_map.get(theme_name, "tokyo-night")
+        try:
+            self.theme = textual_theme
+        except Exception as e:
+            # Fallback if the theme is unavailable
+            self.theme = "tokyo-night"
 
     async def start_backend(self):
-        """Start backend subprocess"""
-        try:
-            import subprocess
-            import sys
-            backend_path = os.path.join(os.path.dirname(__file__), "..", "..", "backend")
-            proc = await asyncio.create_subprocess_exec(
-                "uvicorn", "app.main:app",
-                "--host", "localhost",
-                "--port", "8000",
-                "--reload",
-                cwd=backend_path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            # Wait a bit for startup
-            await asyncio.sleep(2)
+        """Start backend subprocess if not already running."""
+        import sys
+        import shutil
+        from . import backend as be
+
+        # If backend is already up, nothing to do
+        if be.is_backend_up():
             store.set_backend_status(True, "connected")
-        except Exception as e:
-            store.set_backend_status(False, f"error: {e}")
+            return
+
+        # Find a python that can run uvicorn. Prefer this interpreter, then
+        # common venv/conda locations.
+        candidates = [sys.executable, shutil.which("python") or "python"]
+        # Add the known conda env on this machine if present
+        conda_py = r"E:\ANACONDA\envs\ele-agent\python.exe"
+        if os.name == "nt" and os.path.exists(conda_py):
+            if conda_py not in candidates:
+                candidates.append(conda_py)
+
+        backend_path = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "backend")
+        )
+
+        for py in candidates:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    py, "-m", "uvicorn", "app.main:app",
+                    "--host", "localhost",
+                    "--port", "8000",
+                    cwd=backend_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                # Wait a bit for startup
+                await asyncio.sleep(3)
+                proc.kill()
+                if be.is_backend_up():
+                    store.set_backend_status(True, "connected")
+                    return
+            except Exception:
+                continue
+
+        store.set_backend_status(False, "not running")
 
     async def watch_config(self):
         """Watch config file for changes"""
         import watchfiles
         config_path = os.path.expanduser("~/.ele-agent/config.toml")
-        async for _ in watchfiles.awatch(config_path):
-            # Reload config
-            from .config import load_cli_config, cli_config as config
-            new_config = load_cli_config()
-            # Update theme if changed
-            if new_config.theme != config.theme:
-                config.theme = new_config.theme
-                self.apply_theme(new_config.theme)
+        # Ensure the file exists so watchfiles has something to watch
+        try:
+            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+            if not os.path.exists(config_path):
+                # Save current config to seed the file
+                from .config import save_cli_config
+                save_cli_config(cli_config)
+        except Exception:
+            pass
+
+        try:
+            async for _ in watchfiles.awatch(config_path):
+                # Reload config
+                from .config import load_cli_config, cli_config as config
+                new_config = load_cli_config()
+                # Update theme if changed
+                if new_config.theme != config.theme:
+                    config.theme = new_config.theme
+                    self.apply_theme(new_config.theme)
+        except FileNotFoundError:
+            # Config file was deleted; nothing to watch
+            pass
 
     # Actions
     def action_leader_mode(self):

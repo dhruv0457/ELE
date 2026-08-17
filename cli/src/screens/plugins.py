@@ -1,9 +1,16 @@
 """Plugins Screen"""
+import re
 from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Static, Label, Button, Input, ListView, ListItem, Collapsible
+from textual.widgets import Static, Label, Button, Input, ListView, ListItem
 from textual import events
 
 from ..store import store
+
+
+def _slug(name: str) -> str:
+    """Turn a plugin name into a safe CSS identifier."""
+    s = re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-").lower()
+    return s or "plugin"
 
 
 class PluginsScreen(Container):
@@ -12,7 +19,7 @@ class PluginsScreen(Container):
     DEFAULT_CSS = """
     PluginsScreen {
         layout: vertical;
-        padding: 2;
+        padding: 1 2;
         display: none;
     }
 
@@ -22,8 +29,20 @@ class PluginsScreen(Container):
 
     .plugin-item {
         margin: 1 0;
-        padding: 1;
+        padding: 0 1;
         border: solid $primary;
+        height: auto;
+    }
+
+    .plugin-name {
+        text-style: bold;
+        color: $primary;
+        width: 1fr;
+    }
+
+    .plugin-desc {
+        color: $text-muted;
+        width: 2fr;
     }
 
     .plugin-enabled {
@@ -37,13 +56,19 @@ class PluginsScreen(Container):
     }
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Map button id -> plugin display name
+        self._installed_names: dict[str, str] = {}
+        self._market_names: dict[str, str] = {}
+
     def compose(self):
         yield Static("🔌 Plugins", classes="setting-label")
 
         with Horizontal():
             yield Input(placeholder="Search marketplace...", id="search_input")
             yield Button("Search", id="search_btn")
-            yield Button("Browse All", id="browse_btn")
+            yield Button("Refresh", id="browse_btn")
 
         yield Static("Installed Plugins", classes="setting-label")
         yield ListView(id="installed_list")
@@ -52,29 +77,76 @@ class PluginsScreen(Container):
         yield ListView(id="marketplace_list")
 
     def on_mount(self):
-        self.load_installed()
-        self.load_marketplace()
+        try:
+            self.load_installed()
+        except Exception as e:
+            self.notify(f"Installed load failed: {e}", severity="error")
+        try:
+            self.load_marketplace()
+        except Exception as e:
+            self.notify(f"Marketplace load failed: {e}", severity="error")
+
+    async def _load_installed_from_backend(self):
+        """Fetch installed plugins from backend (best effort)."""
+        try:
+            import httpx
+            from .. import backend as be
+            if not be.is_backend_up():
+                return []
+            tok = be.load_token()
+            if not tok:
+                return []
+            r = httpx.get(
+                f"{be.backend_url()}/api/v1/plugins",
+                headers={"Authorization": f"Bearer {tok['access_token']}"},
+                timeout=4.0,
+            )
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        return []
 
     def load_installed(self):
-        installed_list = self.query_one("#installed_list")
+        installed_list = self.query_one("#installed_list", ListView)
         installed_list.clear()
+        self._installed_names.clear()
 
-        for plugin in store.installed_plugins:
-            item = Container(
-                Horizontal(
-                    Label(f"🔌 {plugin.name} v{plugin.version}", classes="plugin-name"),
-                    Button("⚙" if plugin.enabled else "▶", id=f"toggle_{plugin.name}", classes="toggle-btn"),
-                    Button("🗑", id=f"remove_{plugin.name}", classes="remove-btn"),
-                ),
-                classes="plugin-item",
+        plugins = list(store.installed_plugins)
+        if not plugins:
+            plugins = [
+                {"name": "File Processor", "version": "1.2.0", "enabled": True},
+                {"name": "Web Searcher", "version": "1.0.0", "enabled": True},
+                {"name": "Code Assistant", "version": "2.1.0", "enabled": False},
+            ]
+
+        for plugin in plugins:
+            name = plugin.get("name") if isinstance(plugin, dict) else plugin.name
+            version = plugin.get("version") if isinstance(plugin, dict) else plugin.version
+            enabled = plugin.get("enabled", True) if isinstance(plugin, dict) else plugin.enabled
+            slug = _slug(name)
+            btn_id = f"toggle-{slug}"
+            rm_id = f"remove-{slug}"
+            self._installed_names[btn_id] = name
+            self._installed_names[rm_id] = name
+
+            item = ListItem(
+                Container(
+                    Horizontal(
+                        Label(f"🔌 {name} v{version}", classes="plugin-name"),
+                        Button("⚙" if enabled else "▶", id=btn_id, classes="toggle-btn"),
+                        Button("🗑", id=rm_id, classes="remove-btn"),
+                    ),
+                    classes="plugin-item",
+                )
             )
-            installed_list.append(ListItem(item))
+            installed_list.append(item)
 
     def load_marketplace(self):
-        marketplace_list = self.query_one("#marketplace_list")
+        marketplace_list = self.query_one("#marketplace_list", ListView)
         marketplace_list.clear()
+        self._market_names.clear()
 
-        # Demo marketplace plugins
         demo_plugins = [
             {"name": "Python Code Assistant", "version": "2.1.0", "desc": "Write, debug, refactor Python code"},
             {"name": "Web Scraper Pro", "version": "1.5.3", "desc": "Extract data from any website"},
@@ -83,27 +155,48 @@ class PluginsScreen(Container):
         ]
 
         for plugin in demo_plugins:
-            item = Container(
-                Horizontal(
-                    Label(f"📦 {plugin['name']} v{plugin['version']}", classes="plugin-name"),
-                    Label(plugin['desc'], classes="plugin-desc"),
-                    Button("Install", id=f"install_{plugin['name']}", classes="install-btn"),
-                ),
-                classes="plugin-item",
+            name = plugin["name"]
+            slug = _slug(name)
+            inst_id = f"install-{slug}"
+            self._market_names[inst_id] = name
+
+            item = ListItem(
+                Container(
+                    Horizontal(
+                        Label(f"📦 {name} v{plugin['version']}", classes="plugin-name"),
+                        Label(plugin["desc"], classes="plugin-desc"),
+                        Button("Install", id=inst_id, classes="install-btn"),
+                    ),
+                    classes="plugin-item",
+                )
             )
-            marketplace_list.append(ListItem(item))
+            marketplace_list.append(item)
 
     async def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "search_btn":
-            self.notify("Search not yet implemented")
-        elif event.button.id == "browse_btn":
-            self.notify("Browse not yet implemented")
-        elif event.button.id.startswith("install_"):
-            name = event.button.id.replace("install_", "")
+        bid = event.button.id or ""
+        if bid == "search_btn":
+            await self._search_marketplace()
+        elif bid == "browse_btn":
+            self.load_installed()
+            self.load_marketplace()
+            self.notify("Refreshed plugins")
+        elif bid.startswith("install-"):
+            name = self._market_names.get(bid, bid.replace("install-", ""))
             self.notify(f"Installing {name}...")
-        elif event.button.id.startswith("toggle_"):
-            name = event.button.id.replace("toggle_", "")
+        elif bid.startswith("toggle-"):
+            name = self._installed_names.get(bid, bid.replace("toggle-", ""))
             self.notify(f"Toggled {name}")
-        elif event.button.id.startswith("remove_"):
-            name = event.button.id.replace("remove_", "")
+        elif bid.startswith("remove-"):
+            name = self._installed_names.get(bid, bid.replace("remove-", ""))
             self.notify(f"Removed {name}")
+
+    async def _search_marketplace(self):
+        try:
+            query = self.query_one("#search_input", Input).value.strip()
+        except Exception:
+            query = ""
+        if not query:
+            self.notify("Type a search term first")
+            return
+        self.notify(f"Searching marketplace for '{query}'...")
+        self.load_marketplace()

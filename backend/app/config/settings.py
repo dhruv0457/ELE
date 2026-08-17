@@ -388,7 +388,7 @@ settings = Settings()
 DEFAULT_PROVIDERS = {
     "gemini": {"model": "gemini-1.5-pro", "priority": 1},
     "groq": {"model": "llama-3.1-70b-versatile", "priority": 2},
-    "nvidia": {"model": "nemotron-3-ultra", "priority": 3},
+    "nvidia": {"model": "meta/llama-3.1-70b-instruct", "priority": 3},
     "claude": {"model": "claude-3-5-sonnet", "priority": 4},
     "openai": {"model": "gpt-4o", "priority": 5},
 }

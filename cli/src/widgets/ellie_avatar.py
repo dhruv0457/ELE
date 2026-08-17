@@ -73,8 +73,8 @@ class EllieAvatar(Static):
     }
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.state = OverlayStatus.IDLE
         self.frame_index = 0
         self.animation_task = None

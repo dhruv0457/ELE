@@ -20,7 +20,7 @@ class MessageBubble(Container):
     .user-message {
         background: $primary;
         color: $text;
-        margin-left: 20%;
+        margin: 0 20;
     }
 
     .assistant-message {
@@ -45,7 +45,6 @@ class MessageBubble(Container):
 
     .message-content {
         margin: 1 0;
-        white-space: pre-wrap;
     }
 
     .thoughts-section {
