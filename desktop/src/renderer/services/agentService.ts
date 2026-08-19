@@ -25,10 +25,8 @@ export interface StreamEvent {
   model?: string
 }
 
-// In-memory cache for API keys
-let diskKeysCache: Record<string, string> = {
-  NVIDIA_API_KEY: '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',
-}
+// In-memory cache for API keys — NO hardcoded keys in source!
+let diskKeysCache: Record<string, string> = {}
 
 // Initialize and sync keys from disk on startup
 export async function syncKeysFromDisk(): Promise<Record<string, string>> {
@@ -39,7 +37,7 @@ export async function syncKeysFromDisk(): Promise<Record<string, string>> {
         diskKeysCache = { ...diskKeysCache, ...diskKeys }
         for (const [k, v] of Object.entries(diskKeys)) {
           if (v) {
-            localStorage.setItem(`ele_key_${k.replace('_API_KEY', '').toLowerCase()}`, v)
+            localStorage.setItem(`ele_key_${k.replace('_API_KEY', '').toLowerCase()}`, v as string)
           }
         }
       }
@@ -71,9 +69,6 @@ export function getStoredApiKey(provider: string): string {
     }
   } catch {}
 
-  if (provider.toLowerCase() === 'nvidia') {
-    return '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'
-  }
   return ''
 }
 
@@ -93,7 +88,7 @@ export function getAvailableProviders(): { id: string; name: string; hasKey: boo
   return [
     {
       id: 'nvidia',
-      name: 'NVIDIA NIM (Fast Llama 3.1/3.3)',
+      name: 'NVIDIA NIM (Fast)',
       hasKey: Boolean(getStoredApiKey('nvidia')),
       defaultModel: 'meta/llama-3.1-8b-instruct',
     },
@@ -129,6 +124,28 @@ export function getAvailableProviders(): { id: string; name: string; hasKey: boo
     },
   ]
 }
+
+// All supported NVIDIA NIM model IDs
+export const NVIDIA_MODELS = [
+  'meta/llama-3.1-8b-instruct',
+  'meta/llama-3.1-70b-instruct',
+  'meta/llama-3.3-70b-instruct',
+  'meta/llama-3.2-11b-vision-instruct',
+  'meta/llama-3.2-90b-vision-instruct',
+  'deepseek-ai/deepseek-r1',
+  'deepseek-ai/deepseek-r1-distill-llama-70b',
+  'deepseek-ai/deepseek-r1-distill-qwen-32b',
+  'mistralai/mistral-7b-instruct-v0.3',
+  'mistralai/mixtral-8x22b-instruct-v0.1',
+  'mistralai/mistral-large-2-instruct',
+  'nvidia/nemotron-4-340b-instruct',
+  'qwen/qwen2.5-72b-instruct',
+  'qwen/qwen2.5-coder-32b-instruct',
+  'microsoft/phi-3-mini-128k-instruct',
+  'microsoft/phi-3.5-mini-instruct',
+  'google/gemma-2-27b-it',
+  'google/gemma-2-9b-it',
+] as const
 
 export function normalizeModel(provider: string, model: string): string {
   const p = provider.toLowerCase()

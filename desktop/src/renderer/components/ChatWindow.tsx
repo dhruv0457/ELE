@@ -327,7 +327,6 @@ export function ChatWindow() {
     setSlashQuery(null)
     setInput('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
-
     /* ── Inline slash command dispatcher ── */
     if (rawText.startsWith('/') && !screenshot) {
       const parts = rawText.split(/\s+/)

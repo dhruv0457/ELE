@@ -373,57 +373,67 @@ async def action_node(state: AgentState) -> AgentState:
     tool_results = []
 
     tool_patterns = {
-        "read_file": r'TOOL_CALL\s+read_file\s+(\{.*?\})',
-        "write_file": r'TOOL_CALL\s+write_file\s+(\{.*?\})',
-        "list_files": r'TOOL_CALL\s+list_files\s+(\{.*?\})',
-        "run_shell": r'TOOL_CALL\s+run_shell\s+(\{.*?\})',
-        "open_app": r'TOOL_CALL\s+open_app\s+(\{.*?\})',
-        "browser_navigate": r'TOOL_CALL\s+browser_navigate\s+(\{.*?\})',
-        "browser_click": r'TOOL_CALL\s+browser_click\s+(\{.*?\})',
-        "browser_fill": r'TOOL_CALL\s+browser_fill\s+(\{.*?\})',
-        "browser_extract": r'TOOL_CALL\s+browser_extract\s+(\{.*?\})',
+        "read_file":          r'TOOL_CALL\s+read_file\s+(\{.*?\})',
+        "write_file":         r'TOOL_CALL\s+write_file\s+(\{.*?\})',
+        "list_files":         r'TOOL_CALL\s+list_files\s+(\{.*?\})',
+        "run_shell":          r'TOOL_CALL\s+run_shell\s+(\{.*?\})',
+        "open_app":           r'TOOL_CALL\s+open_app\s+(\{.*?\})',
+        "browser_navigate":   r'TOOL_CALL\s+browser_navigate\s+(\{.*?\})',
+        "browser_click":      r'TOOL_CALL\s+browser_click\s+(\{.*?\})',
+        "browser_fill":       r'TOOL_CALL\s+browser_fill\s+(\{.*?\})',
+        "browser_extract":    r'TOOL_CALL\s+browser_extract\s+(\{.*?\})',
         "browser_screenshot": r'TOOL_CALL\s+browser_screenshot\s+(\{.*?\})',
-        "browser_eval_js": r'TOOL_CALL\s+browser_eval_js\s+(\{.*?\})',
-        "browser_wait": r'TOOL_CALL\s+browser_wait\s+(\{.*?\})',
-        "browser_hover": r'TOOL_CALL\s+browser_hover\s+(\{.*?\})',
-        "browser_select": r'TOOL_CALL\s+browser_select\s+(\{.*?\})',
-        "browser_back": r'TOOL_CALL\s+browser_back\s+(\{.*?\})',
-        "browser_forward": r'TOOL_CALL\s+browser_forward\s+(\{.*?\})',
-        "browser_reload": r'TOOL_CALL\s+browser_reload\s+(\{.*?\})',
-        "browser_get_content": r'TOOL_CALL\s+browser_get_content\s+(\{.*?\})',
-        "browser_get_text": r'TOOL_CALL\s+browser_get_text\s+(\{.*?\})',
-        "browser_get_cookies": r'TOOL_CALL\s+browser_get_cookies\s+(\{.*?\})',
-        "browser_set_cookies": r'TOOL_CALL\s+browser_set_cookies\s+(\{.*?\})',
-        "move_mouse": r'TOOL_CALL\s+move_mouse\s+(\{.*?\})',
-        "click": r'TOOL_CALL\s+click\s+(\{.*?\})',
-        "double_click": r'TOOL_CALL\s+double_click\s+(\{.*?\})',
-        "right_click": r'TOOL_CALL\s+right_click\s+(\{.*?\})',
-        "drag": r'TOOL_CALL\s+drag\s+(\{.*?\})',
-        "type_text": r'TOOL_CALL\s+type_text\s+(\{.*?\})',
-        "press_key": r'TOOL_CALL\s+press_key\s+(\{.*?\})',
-        "hotkey": r'TOOL_CALL\s+hotkey\s+(\{.*?\})',
-        "scroll": r'TOOL_CALL\s+scroll\s+(\{.*?\})',
-        "screenshot": r'TOOL_CALL\s+screenshot\s+(\{.*?\})',
-        "screenshot_region": r'TOOL_CALL\s+screenshot_region\s+(\{.*?\})',
-        "ocr": r'TOOL_CALL\s+ocr\s+(\{.*?\})',
-        "ocr_region": r'TOOL_CALL\s+ocr_region\s+(\{.*?\})',
-        "launch_app": r'TOOL_CALL\s+launch_app\s+(\{.*?\})',
-        "focus_window": r'TOOL_CALL\s+focus_window\s+(\{.*?\})',
-        "close_window": r'TOOL_CALL\s+close_window\s+(\{.*?\})',
-        "list_windows": r'TOOL_CALL\s+list_windows\s+(\{.*?\})',
-        "get_window_info": r'TOOL_CALL\s+get_window_info\s+(\{.*?\})',
-        "ocr_region": r'TOOL_CALL\s+ocr_region\s+(\{.*?\})',
-        "capture_region": r'TOOL_CALL\s+capture_region\s+(\{.*?\})',
-        "move_mouse": r'TOOL_CALL\s+move_mouse\s+(\{.*?\})',
-        "click_at": r'TOOL_CALL\s+click_at\s+(\{.*?\})',
-        "drag_drop": r'TOOL_CALL\s+drag_drop\s+(\{.*?\})',
+        "browser_eval_js":    r'TOOL_CALL\s+browser_eval_js\s+(\{.*?\})',
+        "browser_wait":       r'TOOL_CALL\s+browser_wait\s+(\{.*?\})',
+        "browser_hover":      r'TOOL_CALL\s+browser_hover\s+(\{.*?\})',
+        "browser_select":     r'TOOL_CALL\s+browser_select\s+(\{.*?\})',
+        # No-arg browser tools — match with optional empty braces or no braces
+        "browser_back":       r'TOOL_CALL\s+browser_back(?:\s+\{\})?',
+        "browser_forward":    r'TOOL_CALL\s+browser_forward(?:\s+\{\})?',
+        "browser_reload":     r'TOOL_CALL\s+browser_reload(?:\s+\{\})?',
+        "browser_get_content":r'TOOL_CALL\s+browser_get_content(?:\s+\{\})?',
+        "browser_get_text":   r'TOOL_CALL\s+browser_get_text(?:\s+\{\})?',
+        "browser_get_cookies":r'TOOL_CALL\s+browser_get_cookies(?:\s+\{\})?',
+        "browser_set_cookies":r'TOOL_CALL\s+browser_set_cookies\s+(\{.*?\})',
+        "move_mouse":         r'TOOL_CALL\s+move_mouse\s+(\{.*?\})',
+        "click":              r'TOOL_CALL\s+click\s+(\{.*?\})',
+        "click_at":           r'TOOL_CALL\s+click_at\s+(\{.*?\})',
+        "double_click":       r'TOOL_CALL\s+double_click\s+(\{.*?\})',
+        "right_click":        r'TOOL_CALL\s+right_click\s+(\{.*?\})',
+        "drag":               r'TOOL_CALL\s+drag\s+(\{.*?\})',
+        "drag_drop":          r'TOOL_CALL\s+drag_drop\s+(\{.*?\})',
+        "type_text":          r'TOOL_CALL\s+type_text\s+(\{.*?\})',
+        "press_key":          r'TOOL_CALL\s+press_key\s+(\{.*?\})',
+        "hotkey":             r'TOOL_CALL\s+hotkey\s+(\{.*?\})',
+        "scroll":             r'TOOL_CALL\s+scroll\s+(\{.*?\})',
+        "screenshot":         r'TOOL_CALL\s+screenshot(?:\s+\{\})?',
+        "screenshot_region":  r'TOOL_CALL\s+screenshot_region\s+(\{.*?\})',
+        "ocr":                r'TOOL_CALL\s+ocr\s+(\{.*?\})',
+        "ocr_region":         r'TOOL_CALL\s+ocr_region\s+(\{.*?\})',
+        "capture_region":     r'TOOL_CALL\s+capture_region\s+(\{.*?\})',
+        "launch_app":         r'TOOL_CALL\s+launch_app\s+(\{.*?\})',
+        "focus_window":       r'TOOL_CALL\s+focus_window\s+(\{.*?\})',
+        "close_window":       r'TOOL_CALL\s+close_window\s+(\{.*?\})',
+        "list_windows":       r'TOOL_CALL\s+list_windows(?:\s+\{\})?',
+        "get_window_info":    r'TOOL_CALL\s+get_window_info\s+(\{.*?\})',
+    }
+
+    # No-arg tools — these have no capture group so re.findall returns list of empty strings
+    NO_ARG_TOOLS = {
+        "browser_back", "browser_forward", "browser_reload",
+        "browser_get_content", "browser_get_text", "browser_get_cookies",
+        "screenshot", "list_windows",
     }
 
     for tool_name, pattern in tool_patterns.items():
         matches = re.findall(pattern, response, re.DOTALL)
         for match in matches:
             try:
-                args = json.loads(match)
+                # For no-arg tools, match is '' (empty capture or no group) → use {}
+                if tool_name in NO_ARG_TOOLS or not match or match.strip() == '{}':
+                    args = {}
+                else:
+                    args = json.loads(match)
                 state["current_tool"] = tool_name
                 state["thoughts"].append(f"Executing {tool_name}...")
 

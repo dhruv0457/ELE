@@ -168,29 +168,121 @@ function VoiceSettings({ settings, updateSettings }: any) {
 }
 
 function ApiKeysSettings({ settings, updateSettings }: any) {
+  const [keyInputs, setKeyInputs] = React.useState<Record<string, string>>({})
+  const [saved, setSaved] = React.useState<Record<string, boolean>>({})
+  const [showKey, setShowKey] = React.useState<Record<string, boolean>>({})
+
   const providers = [
-    { id: 'openai', name: 'OpenAI', prefix: 'sk-' },
-    { id: 'gemini', name: 'Google Gemini', prefix: 'AI' },
-    { id: 'openclaw', name: 'OpenClaw', prefix: 'oc_' },
-    { id: 'anthropic', name: 'Anthropic', prefix: 'sk-ant-' },
+    { id: 'nvidia',    name: 'NVIDIA NIM',       hint: 'build.nvidia.com → Get API Key (Free)' },
+    { id: 'groq',     name: 'Groq (Ultra Fast)', hint: 'console.groq.com/keys (Free)' },
+    { id: 'gemini',   name: 'Google Gemini',     hint: 'aistudio.google.com (Free tier)' },
+    { id: 'openai',   name: 'OpenAI',            hint: 'platform.openai.com' },
+    { id: 'anthropic',name: 'Anthropic Claude',  hint: 'console.anthropic.com' },
   ]
+
+  const getStoredKey = (id: string) => {
+    return localStorage.getItem(`ele_key_${id}`) || ''
+  }
+
+  const handleSave = async (id: string) => {
+    const key = keyInputs[id]?.trim()
+    if (!key) return
+    localStorage.setItem(`ele_key_${id}`, key)
+    if ((window as any).ele?.keys?.set) {
+      await (window as any).ele.keys.set(id, key)
+    }
+    setSaved(s => ({ ...s, [id]: true }))
+    setKeyInputs(s => ({ ...s, [id]: '' }))
+    setTimeout(() => setSaved(s => ({ ...s, [id]: false })), 2000)
+  }
+
+  const handleClear = (id: string) => {
+    localStorage.removeItem(`ele_key_${id}`)
+    if ((window as any).ele?.keys?.set) {
+      (window as any).ele.keys.set(id, '')
+    }
+    setSaved(s => ({ ...s, [id]: false }))
+  }
+
   return (
     <div className="card p-6 space-y-6">
       <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">API Keys</h2>
-      <p className="text-sm text-gray-500 dark:text-gray-400">Add your own API keys to use BYOK (Bring Your Own Key) mode.</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        Add your own API keys (BYOK mode). Keys are saved locally on your device only.
+      </p>
       <div className="space-y-4">
-        {providers.map(provider => (
-          <div key={provider.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"><Key className="w-5 h-5" /></div>
-              <div>
-                <p className="font-medium text-gray-900 dark:text-gray-100">{provider.name}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{settings.api_keys[provider.id]?.configured ? 'Configured' : 'Not configured'}</p>
+        {providers.map(provider => {
+          const existing = getStoredKey(provider.id)
+          const configured = Boolean(existing)
+          return (
+            <div key={provider.id} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${configured ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : 'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400'}`}>
+                    <Key className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">{provider.name}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{provider.hint}</p>
+                  </div>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded-full font-medium ${configured ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'}`}>
+                  {configured ? '✓ Configured' : 'Not set'}
+                </span>
+              </div>
+              {configured && (
+                <div className="flex items-center gap-2 text-xs text-gray-400 font-mono bg-gray-100 dark:bg-gray-900 px-3 py-1.5 rounded">
+                  <span>{showKey[provider.id] ? existing : `${existing.slice(0, 8)}${'•'.repeat(12)}${existing.slice(-4)}`}</span>
+                  <button onClick={() => setShowKey(s => ({ ...s, [provider.id]: !s[provider.id] }))} className="ml-auto text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                    {showKey[provider.id] ? '🙈' : '👁'}
+                  </button>
+                  <button onClick={() => handleClear(provider.id)} className="text-red-500 hover:text-red-700">✕</button>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={configured ? 'Enter new key to replace...' : `Paste ${provider.id} API key...`}
+                  value={keyInputs[provider.id] || ''}
+                  onChange={e => setKeyInputs(s => ({ ...s, [provider.id]: e.target.value }))}
+                  onKeyDown={e => e.key === 'Enter' && handleSave(provider.id)}
+                  className="input flex-1 text-sm font-mono"
+                />
+                <button
+                  onClick={() => handleSave(provider.id)}
+                  disabled={!keyInputs[provider.id]?.trim()}
+                  className="btn-primary text-sm px-4"
+                >
+                  {saved[provider.id] ? '✓ Saved' : 'Save'}
+                </button>
               </div>
             </div>
-            <button className="btn-primary text-sm">Update</button>
-          </div>
-        ))}
+          )
+        })}
+      </div>
+
+      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <h3 className="font-medium text-blue-900 dark:text-blue-100 mb-1">🚀 NVIDIA NIM — All Models</h3>
+        <p className="text-xs text-blue-700 dark:text-blue-300 mb-2">After setting your NVIDIA key, use <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">/model</code> to switch models in chat:</p>
+        <div className="grid grid-cols-2 gap-1 text-xs font-mono text-blue-800 dark:text-blue-200">
+          {[
+            'meta/llama-3.1-8b-instruct',
+            'meta/llama-3.1-70b-instruct',
+            'meta/llama-3.3-70b-instruct',
+            'meta/llama-3.2-11b-vision-instruct',
+            'deepseek-ai/deepseek-r1',
+            'deepseek-ai/deepseek-r1-distill-llama-70b',
+            'mistralai/mistral-7b-instruct-v0.3',
+            'mistralai/mixtral-8x22b-instruct-v0.1',
+            'nvidia/nemotron-4-340b-instruct',
+            'qwen/qwen2.5-72b-instruct',
+            'microsoft/phi-3-mini-128k-instruct',
+            'google/gemma-2-27b-it',
+          ].map(m => (
+            <code key={m} className="bg-blue-100 dark:bg-blue-900/50 px-1.5 py-0.5 rounded text-xs truncate">{m.split('/')[1]}</code>
+          ))}
+        </div>
+        <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">Use: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">/model deepseek-ai/deepseek-r1</code> for full model IDs</p>
       </div>
     </div>
   )

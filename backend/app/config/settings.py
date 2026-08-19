@@ -402,12 +402,90 @@ settings = Settings()
 
 # Default LLM providers configuration
 DEFAULT_PROVIDERS = {
-    "gemini": {"model": "gemini-1.5-pro", "priority": 1},
-    "groq": {"model": "llama-3.1-70b-versatile", "priority": 2},
-    "nvidia": {"model": "meta/llama-3.1-70b-instruct", "priority": 3},
-    "claude": {"model": "claude-3-5-sonnet", "priority": 4},
-    "openai": {"model": "gpt-4o", "priority": 5},
+    "gemini": {"model": "gemini-2.0-flash-exp", "priority": 1},
+    "groq": {"model": "llama-3.3-70b-versatile", "priority": 2},
+    "nvidia": {"model": "meta/llama-3.1-8b-instruct", "priority": 3},  # Fast 8B for speed
+    "claude": {"model": "claude-3-haiku-20240307", "priority": 4},
+    "openai": {"model": "gpt-4o-mini", "priority": 5},
 }
+
+# All 102 supported NVIDIA NIM models (fetched live from NVIDIA NIM API)
+NVIDIA_NIM_MODELS = [
+    # Meta Llama
+    "meta/llama-3.1-8b-instruct",
+    "meta/llama-3.3-70b-instruct",
+    "meta/llama-3.1-70b-instruct",
+    "meta/llama-3.2-11b-vision-instruct",
+    "meta/llama-3.2-90b-vision-instruct",
+    "meta/llama-3.2-3b-instruct",
+    "meta/llama-3.2-1b-instruct",
+    "meta/codellama-70b",
+    "meta/llama2-70b",
+    "meta/llama-guard-4-12b",
+    "meta/muse-glimmer-30b",
+    # NVIDIA Nemotron & Agents
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "nvidia/llama-3.3-nemotron-super-49b-v1",
+    "nvidia/nemotron-4-340b-instruct",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "nvidia/llama-3.1-nemotron-51b-instruct",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+    "nvidia/nemotron-mini-4b-instruct",
+    "nvidia/cosmos-reason2-8b",
+    "nvidia/nemotron-3-nano-30b-a3b",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "nvidia/nemotron-3-ultra-550b-a55b",
+    "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "nvidia/neva-22b",
+    "nvidia/vila",
+    "nvidia/riva-translate-4b-instruct-v2",
+    # DeepSeek
+    "deepseek-ai/deepseek-r1",
+    "deepseek-ai/deepseek-r1-distill-llama-70b",
+    "deepseek-ai/deepseek-coder-6.7b-instruct",
+    "deepseek-ai/deepseek-v4-flash-0731",
+    # Mistral AI
+    "mistralai/mistral-7b-instruct-v0.3",
+    "mistralai/mistral-large-2-instruct",
+    "mistralai/mistral-large",
+    "mistralai/mistral-nemotron",
+    "mistralai/mixtral-8x22b-v0.1",
+    "mistralai/codestral-22b-instruct-v0.1",
+    "nv-mistralai/mistral-nemo-12b-instruct",
+    # Google
+    "google/gemma-4-31b-it",
+    "google/gemma-3-12b-it",
+    "google/gemma-3-4b-it",
+    "google/codegemma-7b",
+    "google/diffusiongemma-26b-a4b-it",
+    "google/deplot",
+    "google/recurrentgemma-2b",
+    # Microsoft
+    "microsoft/phi-3-vision-128k-instruct",
+    "microsoft/phi-3.5-moe-instruct",
+    "microsoft/kosmos-2",
+    # IBM Granite
+    "ibm/granite-3.0-8b-instruct",
+    "ibm/granite-3.0-3b-a800m-instruct",
+    "ibm/granite-34b-code-instruct",
+    "ibm/granite-8b-code-instruct",
+    # Specialist & Open Weight
+    "01-ai/yi-large",
+    "ai21labs/jamba-1.5-large-instruct",
+    "stepfun-ai/step-3.7-flash",
+    "moonshotai/kimi-k2.6",
+    "z-ai/glm-5.2",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "writer/palmyra-creative-122b",
+    "writer/palmyra-fin-70b-32k",
+    "writer/palmyra-med-70b-32k",
+    "databricks/dbrx-instruct",
+    "bigcode/starcoder2-15b",
+    "adept/fuyu-8b",
+    "zyphra/zamba2-7b-instruct",
+    "minimaxai/minimax-m3",
+]
 
 # Initialize default providers if not set
 if not settings.llm.providers:

@@ -76,9 +76,10 @@ def get_tier_models(tier: str) -> List[Tuple[str, str]]:
         ]
     else:  # fast tier
         candidates = [
-            ("nvidia", "meta/llama-3.3-70b-instruct"),
+            ("nvidia", "meta/llama-3.1-8b-instruct"),
             ("gemini", "gemini-2.0-flash-exp"),
             ("groq", "llama-3.3-70b-versatile"),
+            ("nvidia", "meta/llama-3.3-70b-instruct"),
             ("openai", "gpt-4o-mini"),
             ("anthropic", "claude-3-haiku-20240307"),
             ("ollama", "llama3"),
