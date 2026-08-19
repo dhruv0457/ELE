@@ -130,20 +130,23 @@ async def stream_chat(
         "model": model,
     }
 
-    async with websockets.connect(uri, max_size=None) as ws:
-        await ws.send(json.dumps(payload))
-        while True:
-            try:
-                raw = await ws.recv()
-            except websockets.ConnectionClosed:
-                break
-            try:
-                evt = json.loads(raw)
-            except Exception:
-                continue
-            yield evt
-            if evt.get("type") in ("final", "error"):
-                break
+    try:
+        async with websockets.connect(uri, max_size=None) as ws:
+            await ws.send(json.dumps(payload))
+            while True:
+                try:
+                    raw = await ws.recv()
+                except websockets.ConnectionClosed:
+                    break
+                try:
+                    evt = json.loads(raw)
+                except Exception:
+                    continue
+                yield evt
+                if evt.get("type") in ("final", "error"):
+                    break
+    except (websockets.exceptions.ConnectionRefusedError, OSError) as e:
+        yield {"type": "error", "message": f"Connection failed: {e}"}
 
 
 async def chat_once(
@@ -175,4 +178,65 @@ async def chat_once(
         "thoughts": thoughts,
         "tools_used": tools_used,
         "session_id": session_id,
+    }
+
+
+async def async_is_backend_up(host: str = "localhost", port: int = 8000, timeout: float = 0.5) -> bool:
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{backend_url(host, port)}/health", timeout=timeout)
+            return r.status_code == 200
+    except Exception:
+        return False
+
+
+async def async_login_or_register(
+    email: str = "ele@local.dev",
+    password: str = "ele-agent",
+    host: str = "localhost",
+    port: int = 8000,
+) -> Dict[str, str]:
+    """Register (then login) returning a token. Caches it on disk."""
+    cached = load_token()
+    if cached and cached.get("access_token"):
+        # Validate cached token against /me
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(
+                    f"{backend_url(host, port)}/api/v1/me",
+                    headers={"Authorization": f"Bearer {cached['access_token']}"},
+                    timeout=3.0,
+                )
+                if r.status_code == 200:
+                    return cached
+        except Exception:
+            pass
+
+    base = backend_url(host, port)
+    # Use a real-domain email to satisfy EmailStr validation.
+    real_email = email if "@" in email and not email.endswith(".local") else "ele@example.com"
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"{base}/api/v1/login",
+                json={"email": real_email, "password": password},
+                timeout=3.0,
+            )
+            if r.status_code == 200:
+                data = r.json()
+            else:
+                r = await client.post(
+                    f"{base}/api/v1/register",
+                    json={"email": real_email, "password": password},
+                    timeout=3.0,
+                )
+                data = r.json()
+    except Exception as e:
+        raise RuntimeError(f"Failed to authenticate with backend: {e}")
+
+    save_token(data["access_token"], data["user_id"], data["email"])
+    return {
+        "access_token": data["access_token"],
+        "user_id": data["user_id"],
+        "email": data["email"],
     }

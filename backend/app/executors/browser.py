@@ -507,6 +507,65 @@ class BrowserExecutor:
             logger.error("Get text failed", error=str(e))
             return BrowserResult(success=False, error=str(e))
     
+    async def execute(self, tool: str, args: dict) -> dict:
+        """Execute a browser tool command"""
+        try:
+            if not self._initialized:
+                if not await self.initialize():
+                    return {"success": False, "error": "Failed to initialize browser"}
+            
+            result = None
+            if tool == "browser_navigate":
+                result = await self.navigate(url=args.get("url", ""), wait_until=args.get("wait_until", "networkidle"))
+            elif tool == "browser_click":
+                result = await self.click(selector=args.get("selector", ""), timeout=args.get("timeout", 5000))
+            elif tool == "browser_fill":
+                result = await self.fill(selector=args.get("selector", ""), value=args.get("value", ""), timeout=args.get("timeout", 5000))
+            elif tool == "browser_extract":
+                result = await self.extract(selector=args.get("selector", ""), attribute=args.get("attribute"))
+            elif tool == "browser_screenshot":
+                result = await self.screenshot(full_page=args.get("full_page", False), path=args.get("path"))
+            elif tool == "browser_eval_js":
+                result = await self.evaluate_js(script=args.get("script", ""))
+            elif tool == "browser_wait":
+                if "selector" in args:
+                    result = await self.wait_for_selector(selector=args["selector"], timeout=args.get("timeout", 30000), state=args.get("state", "visible"))
+                else:
+                    result = await self.wait_for_navigation(timeout=args.get("timeout", 30000))
+            elif tool == "browser_hover":
+                result = await self.hover(selector=args.get("selector", ""))
+            elif tool == "browser_select":
+                result = await self.select_option(selector=args.get("selector", ""), value=args.get("value", ""))
+            elif tool == "browser_back":
+                result = await self.go_back()
+            elif tool == "browser_forward":
+                result = await self.go_forward()
+            elif tool == "browser_reload":
+                result = await self.reload()
+            elif tool == "browser_get_content":
+                result = await self.get_page_content()
+            elif tool == "browser_get_text":
+                result = await self.get_page_text()
+            elif tool == "browser_get_cookies":
+                result = await self.get_cookies()
+            elif tool == "browser_set_cookies":
+                result = await self.set_cookies(cookies=args.get("cookies", []))
+            else:
+                return {"success": False, "error": f"Unknown browser tool: {tool}"}
+            
+            if hasattr(result, "success"):
+                return {
+                    "success": result.success,
+                    "output": result.output,
+                    "error": getattr(result, "error", None),
+                    "screenshot": getattr(result, "screenshot", None),
+                    "url": getattr(result, "url", None),
+                    "title": getattr(result, "title", None)
+                }
+            return {"success": True, "result": result}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
     async def close(self):
         """Close the browser"""
         try:

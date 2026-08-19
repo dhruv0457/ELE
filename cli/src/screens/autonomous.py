@@ -1,131 +1,60 @@
-"""Autonomous Mode Screen"""
-from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Static, ListView, ListItem, Label, Button
+from textual.app import ComposeResult
+from textual.containers import Container, Vertical
+from textual.widgets import Static, ListView, ListItem, Label
 from textual import events
 
-from ..store import store, OverlayStatus
-from ..widgets.ellie_avatar import EllieAvatar
-
-
 class AutonomousScreen(Container):
-    """Autonomous Agent Mode Screen"""
-
     DEFAULT_CSS = """
     AutonomousScreen {
         layout: vertical;
         height: 1fr;
         display: none;
+        background: #0A0E17;
     }
-
     AutonomousScreen.visible {
         display: block;
     }
-
-    #ellie_avatar {
-        dock: top;
-    }
-
-    #execution_stream {
-        height: 60%;
-        border: solid $primary;
+    #execution_stream, #conversation_panel {
+        background: #111622;
+        border: solid #00FFE0;
+        overflow: auto;
+        height: 1fr;
         margin: 1;
         padding: 1;
-        overflow-y: auto;
     }
-
-    #conversation_panel {
-        height: 40%;
-        border: solid $primary;
-        margin: 1;
-        padding: 1;
-        overflow-y: auto;
-    }
-
-    .execution-line {
-        margin: 0;
-    }
-
-    .command {
-        color: $primary;
-        text-style: bold;
-    }
-
-    .output {
-        color: $text-muted;
-    }
-
-    .thought {
-        color: $warning;
-        text-style: italic;
-    }
-
-    .result {
-        color: $success;
-    }
-
-    .error {
-        color: $error;
-    }
-
-    .conversation-user {
-        color: $primary;
-        text-style: bold;
-    }
-
-    .conversation-assistant {
-        color: $accent;
-        text-style: bold;
-    }
+    .command { color: #00FFE0; text-style: bold; }
+    .output { color: #8F9BA8; }
+    .thought { color: #FFB800; text-style: italic; }
+    .result { color: #00FF9D; }
+    .error { color: #FF3366; }
+    .conversation-user { color: #00FFE0; text-style: bold; }
+    .conversation-assistant { color: #A855F7; text-style: bold; }
     """
 
-    def compose(self):
-        yield Static("🤖 Ellie ◉ Listening...", id="ellie_avatar")
+    def compose(self) -> ComposeResult:
+        yield Static("🤖 AGENT MODE ACTIVE", id="agent_indicator", classes="command")
         yield ListView(id="execution_stream")
         yield ListView(id="conversation_panel")
 
-    def on_mount(self):
-        self.start_voice_pipeline()
-
-    def start_voice_pipeline(self):
-        """Start the continuous voice pipeline"""
-        store.overlay_status = OverlayStatus.LISTENING
-        # TODO: Implement actual voice pipeline
-        self.add_execution("System", "Autonomous mode started. Ellie is listening...", "system")
-        self.add_conversation("Ellie", "I'm ready. What would you like me to do?", "assistant")
-
-    def stop_voice_pipeline(self):
-        """Stop the voice pipeline"""
+    def start_voice_pipeline(self) -> None:
         pass
 
-    def add_execution(self, source: str, text: str, type: str = "output"):
-        """Add line to execution stream"""
-        from textual.widgets import ListItem, Label
-        execution_list = self.query_one("#execution_stream")
+    def stop_voice_pipeline(self) -> None:
+        pass
 
-        prefix = ""
-        if source:
-            prefix = f"{source}: "
+    def add_execution(self, source: str, text: str, exec_type: str) -> None:
+        list_view = self.query_one("#execution_stream", ListView)
+        css_class = exec_type
+        list_view.append(ListItem(Label(f"[{source}] {text}", classes=css_class)))
+        list_view.scroll_end(animate=False)
 
-        label = Label(f"{prefix}{text}", classes=f"execution-line {type}")
-        execution_list.append(ListItem(label))
-        execution_list.index = len(execution_list.children) - 1
+    def add_conversation(self, speaker: str, text: str, role: str) -> None:
+        list_view = self.query_one("#conversation_panel", ListView)
+        css_class = f"conversation-{role}"
+        list_view.append(ListItem(Label(f"{speaker}: {text}", classes=css_class)))
+        list_view.scroll_end(animate=False)
 
-    def add_conversation(self, speaker: str, text: str, role: str):
-        """Add to conversation panel"""
-        from textual.widgets import ListItem, Label
-        conv_list = self.query_one("#conversation_panel")
-
-        if role == "user":
-            prefix = "👤 "
-            cls = "conversation-user"
-        else:
-            prefix = "🤖 "
-            cls = "conversation-assistant"
-
-        label = Label(f"{prefix}{speaker}: {text}", classes=cls)
-        conv_list.append(ListItem(label))
-        conv_list.index = len(conv_list.children) - 1
-
-    def on_key(self, event: events.Key):
+    def on_key(self, event: events.Key) -> None:
         if event.key == "escape":
-            self.app.action_exit_mode()
+            self.remove_class("visible")
+            self.stop_voice_pipeline()

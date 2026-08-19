@@ -1,138 +1,129 @@
-"""Message Bubble Widget - Professional Style"""
-from textual.widgets import Static, Label
-from textual.containers import Container, Vertical, Horizontal
-
+"""Message Bubble widget — JARVIS hacker style"""
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal, Vertical
+from textual.widgets import Label, Markdown, Static
+from datetime import datetime
 from ..store import Message
 
 
 class MessageBubble(Container):
-    """Professional message bubble with metadata."""
+    """A single chat message bubble."""
 
     DEFAULT_CSS = """
     MessageBubble {
-        margin: 1 2;
+        width: 1fr;
         padding: 0;
+        margin: 0 0 1 0;
         border: none;
         background: transparent;
-        width: 1fr;
     }
-
-    .bubble-wrapper {
-        width: 1fr;
-        padding: 0;
+    MessageBubble .bubble-header {
+        height: 1;
+        layout: horizontal;
     }
-
-    .user-bubble {
-        background: #1e88e5;
-        color: #ffffff;
-        margin: 0 0 0 6;
-        padding: 1 2;
-        max-width: 85%;
+    MessageBubble .role-label {
+        text-style: bold;
+        width: auto;
+        padding-right: 1;
     }
-
-    .assistant-bubble {
-        background: #f8f9fa;
-        color: #1a1a2e;
-        margin: 0 6 0 0;
-        padding: 1 2;
-        border: solid #e0e4ec;
-        max-width: 85%;
+    MessageBubble .time-label {
+        color: #475569;
+        width: auto;
     }
-
-    .message-meta {
-        color: #8a8aa0;
-        text-style: dim;
-        margin-bottom: 1;
+    MessageBubble .bubble-content {
+        padding: 0 2;
+    }
+    MessageBubble .tool-badge {
+        color: #F59E0B;
+        padding: 0 1;
+        margin-top: 0;
         height: 1;
     }
-
-    .bubble-content {
-    }
-
-    .thought-preview {
-        color: #8a8aa0;
+    MessageBubble .thought-line {
+        color: #A855F7;
         text-style: italic;
-        margin: 1 0;
-        padding-left: 1;
-        border-left: solid #64b5f6;
-        background: #f8f9fa;
-    }
-
-    .tool-preview {
-        color: #f57f17;
-        margin: 1 0;
-        padding: 0 1;
-        background: #f8f9fa;
-        border-left: solid #f57f17;
-    }
-
-    .streaming-cursor {
-        color: #1e88e5;
-        text-style: bold blink;
-    }
-
-    .tools-used {
-        margin-top: 1;
+        padding: 0 2;
         height: auto;
     }
-
-    .tool-badge {
-        background: #64b5f6;
-        color: #ffffff;
-        padding: 0 1;
-        margin-right: 1;
-    }
-
-    .message-time {
-        color: #8a8aa0;
-        text-style: dim;
-    }
-
-    .message-role {
+    MessageBubble .streaming-cursor {
+        color: #00FFE0;
         text-style: bold;
-        color: #1e88e5;
+    }
+    MessageBubble.user-bubble {
+        border-left: wide #00FF9D;
+        background: #0D1117;
+        padding-left: 1;
+    }
+    MessageBubble.assistant-bubble {
+        border-left: wide #00FFE0;
+        background: #0A0F1E;
+        padding-left: 1;
+    }
+    MessageBubble.error-bubble {
+        border-left: wide #FF3366;
+        background: #1A0A0A;
+        padding-left: 1;
     }
     """
 
-    def __init__(self, message: 'Message'):
-        super().__init__()
+    def __init__(self, message: Message, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.message = message
-        self.add_class("user-bubble" if message.role == "user" else "assistant-bubble")
-        self.add_class("bubble-wrapper")
+        if message.role == "user":
+            self.add_class("user-bubble")
+        elif message.error:
+            self.add_class("error-bubble")
+        else:
+            self.add_class("assistant-bubble")
 
-    def compose(self):
-        role_label = "You" if self.message.role == "user" else "Ellie"
-        time_str = self.message.timestamp.strftime("%H:%M") if hasattr(self.message, 'timestamp') and self.message.timestamp else ""
+    def compose(self) -> ComposeResult:
+        # Header row: role + timestamp
+        with Horizontal(classes="bubble-header"):
+            if self.message.role == "user":
+                yield Label("[bold #00FF9D]❯ YOU[/]", classes="role-label")
+            else:
+                yield Label("[bold #00FFE0]⚡ ELE[/]", classes="role-label")
+            ts = getattr(self.message, "timestamp", datetime.now())
+            if hasattr(ts, "strftime"):
+                time_str = ts.strftime("%H:%M")
+            else:
+                time_str = ""
+            yield Label(f"[dim]{time_str}[/]", classes="time-label")
 
-        yield Container(
-            Horizontal(
-                Label(f"{role_label}", classes="message-role"),
-                Label(time_str, classes="message-time"),
-                classes="message-meta",
-            ),
-            Label(self.message.content or "", classes="bubble-content", id="content"),
-            id="bubble_main",
-        )
-
+        # Thoughts
         if self.message.thoughts:
-            with Container(classes="thoughts-section"):
-                yield Label(f"💭 Thoughts ({len(self.message.thoughts)})", classes="thought-preview")
-                for thought in self.message.thoughts:
-                    yield Label(f"  {thought}", classes="thought-line")
-
-        if self.message.tools_used:
-            yield Container(
-                *[Label(f"⚙ {tool}", classes="tool-badge") for tool in self.message.tools_used],
-                classes="tools-used",
+            yield Static(
+                f"[italic #A855F7]🧠 {' · '.join(self.message.thoughts[:2])}[/]",
+                classes="thought-line"
             )
 
-        if self.message.is_streaming:
-            yield Label("▌", classes="streaming-cursor")
+        # Tools used
+        for tool in self.message.tools_used:
+            yield Static(f"[#F59E0B]⚙ {tool}[/]", classes="tool-badge")
 
-    def update_content(self, content: str):
-        """Update message content (for streaming)"""
+        # Content
+        yield Markdown(self.message.content or " ", id="content", classes="bubble-content")
+
+        # Streaming cursor
+        if getattr(self.message, "is_streaming", False):
+            yield Static("█", classes="streaming-cursor", id="cursor")
+
+    def update_content(self, content: str, done: bool = False, error: bool = False) -> None:
+        """Update message content in-place."""
         try:
-            content_label = self.query_one("#content", Label)
-            content_label.update(content)
+            md = self.query_one("#content", Markdown)
+            md.update(content or " ")
         except Exception:
             pass
+
+        if done:
+            self.message.is_streaming = False
+            try:
+                cursor = self.query("#cursor")
+                for c in cursor:
+                    c.remove()
+            except Exception:
+                pass
+            if error:
+                self.remove_class("assistant-bubble")
+                self.add_class("error-bubble")

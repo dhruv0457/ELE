@@ -1,110 +1,65 @@
-"""Ellie Avatar Widget - Braille Animation"""
 from textual.widgets import Static
-from textual.containers import Container
-from textual import events
-
+from textual.reactive import reactive
 from ..store import store, OverlayStatus
 
-
 class EllieAvatar(Static):
-    """Animated Ellie avatar using braille"""
-
-    FRAMES = {
-        OverlayStatus.IDLE: [
-            "⠁ Ellie", "⠂ Ellie", "⠃ Ellie", "⠄ Ellie",
-            "⠅ Ellie", "⠆ Ellie", "⠇ Ellie", "⠈ Ellie",
-        ],
-        OverlayStatus.LISTENING: [
-            "▁ Ellie", "▂ Ellie", "▃ Ellie", "▄ Ellie",
-            "▅ Ellie", "▆ Ellie", "▇ Ellie", "█ Ellie",
-            "▇ Ellie", "▆ Ellie", "▅ Ellie", "▄ Ellie",
-            "▃ Ellie", "▂ Ellie",
-        ],
-        OverlayStatus.THINKING: [
-            "⠋ Ellie", "⠙ Ellie", "⠹ Ellie", "⠸ Ellie",
-            "⠼ Ellie", "⠴ Ellie", "⠦ Ellie", "⠧ Ellie",
-            "⠇ Ellie", "⠏ Ellie",
-        ],
-        OverlayStatus.WORKING: [
-            "▱ Ellie", "▰ Ellie", "▰▱ Ellie", "▰▰ Ellie",
-            "▰▰▱ Ellie", "▰▰▰ Ellie", "▰▰▰▱ Ellie", "▰▰▰▰ Ellie",
-        ],
-        OverlayStatus.SPEAKING: [
-            "▁ Ellie", "▂ Ellie", "▃ Ellie", "▄ Ellie",
-            "▅ Ellie", "▆ Ellie", "▇ Ellie", "█ Ellie",
-            "▇ Ellie", "▆ Ellie", "▅ Ellie", "▄ Ellie",
-            "▃ Ellie", "▂ Ellie",
-        ],
-        OverlayStatus.ERROR: [
-            "⠿ Ellie", "⠿ Ellie", "⠿ Ellie",
-        ],
-    }
-
     DEFAULT_CSS = """
     EllieAvatar {
         dock: top;
         width: 100%;
-        height: 3;
+        height: 1;
         content-align: center middle;
         text-style: bold;
-        color: $primary;
-        background: $surface;
-        border-bottom: solid $primary;
+        color: #00FFE0;
+        background: #0A0E17;
+        border-bottom: solid #1E293B;
     }
-
-    EllieAvatar.listening {
-        color: $success;
-    }
-
-    EllieAvatar.thinking {
-        color: $primary;
-    }
-
-    EllieAvatar.working {
-        color: $warning;
-    }
-
-    EllieAvatar.speaking {
-        color: $accent;
-    }
-
-    EllieAvatar.error {
-        color: $error;
-    }
+    
+    EllieAvatar.listening { color: #00FF9D; }
+    EllieAvatar.thinking { color: #A855F7; }
+    EllieAvatar.working { color: #FFB800; }
+    EllieAvatar.speaking { color: #00FFE0; }
+    EllieAvatar.error { color: #FF3366; }
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.state = OverlayStatus.IDLE
+    FRAMES = {
+        OverlayStatus.IDLE: ['⠁ IDLE', '⠂ IDLE', '⠄ IDLE', '⡀ IDLE', '⢀ IDLE', '⠠ IDLE', '⠐ IDLE', '⠈ IDLE'],
+        OverlayStatus.LISTENING: ['▁ 🎙 LISTENING', '▂ 🎙 LISTENING', '▃ 🎙 LISTENING', '▄ 🎙 LISTENING', '▅ 🎙 LISTENING'],
+        OverlayStatus.THINKING: ['⠋ 🧠 THINKING', '⠙ 🧠 THINKING', '⠹ 🧠 THINKING', '⠸ 🧠 THINKING', '⠼ 🧠 THINKING', '⠴ 🧠 THINKING', '⠦ 🧠 THINKING', '⠧ 🧠 THINKING', '⠇ 🧠 THINKING', '⠏ 🧠 THINKING'],
+        OverlayStatus.WORKING: ['▱ ⚙ WORKING', '▰ ⚙ WORKING', '▱ ⚙ WORKING', '▰ ⚙ WORKING'],
+        OverlayStatus.SPEAKING: ['▁ 🗣 SPEAKING', '▂ 🗣 SPEAKING', '▃ 🗣 SPEAKING', '▄ 🗣 SPEAKING'],
+        OverlayStatus.ERROR: ['⠿ ❌ ERROR', '⠷ ❌ ERROR']
+    }
+
+    state = reactive(OverlayStatus.IDLE)
+    
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.frame_index = 0
-        self.animation_task = None
+        self._animation_timer = None
 
-    def on_mount(self):
-        self.update_animation()
+    def on_mount(self) -> None:
+        self._animation_timer = self.set_interval(0.12, self.animate)
 
-    def update_animation(self):
-        """Start 60 FPS animation"""
-        if self.animation_task:
-            self.animation_task.cancel()
-        # 60 FPS = 16.67ms
-        self.animation_task = self.set_interval(1/60, self.animate)
-
-    def animate(self):
-        frames = self.FRAMES.get(self.state, ["🤖 Ellie"])
+    def animate(self) -> None:
+        frames = self.FRAMES.get(self.state, self.FRAMES[OverlayStatus.IDLE])
         self.frame_index = (self.frame_index + 1) % len(frames)
         self.update(frames[self.frame_index])
 
-        # Update CSS class for color
-        self.remove_class(*[s.value for s in OverlayStatus])
-        self.add_class(self.state.value)
+    def watch_state(self, old_state, new_state) -> None:
+        self.frame_index = 0
+        self.remove_class("listening", "thinking", "working", "speaking", "error")
+        if new_state == OverlayStatus.LISTENING:
+            self.add_class("listening")
+        elif new_state == OverlayStatus.THINKING:
+            self.add_class("thinking")
+        elif new_state == OverlayStatus.WORKING:
+            self.add_class("working")
+        elif new_state == OverlayStatus.SPEAKING:
+            self.add_class("speaking")
+        elif new_state == OverlayStatus.ERROR:
+            self.add_class("error")
+        self.animate()
 
-    def watch_state(self, state: str):
-        """Called when store.overlay_status changes"""
-        if hasattr(OverlayStatus, state.upper()):
-            self.state = OverlayStatus[state.upper()]
-            self.frame_index = 0
-
-    def on_click(self, event):
-        """Click Ellie to exit autonomous mode"""
-        if store.mode == "autonomous":
-            self.app.action_toggle_mode()
+    def on_click(self) -> None:
+        pass

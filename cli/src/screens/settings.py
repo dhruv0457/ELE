@@ -1,137 +1,245 @@
-"""Settings Screen"""
-from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Static, Label, Button, Input, Select, Switch, Collapsible
-from textual import events
+"""Settings Screen — API keys, model selection, preferences"""
+from pathlib import Path
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal, VerticalScroll
+from textual.widgets import Static, Input, Button, Label, Select, Switch
+from textual.binding import Binding
 
+from ..store import store
 from ..config import cli_config, save_cli_config
+from .. import llm as engine
 
 
 class SettingsScreen(Container):
-    """Settings Screen"""
+    """Settings — minimal, focused."""
 
     DEFAULT_CSS = """
-    SettingsScreen {
-        layout: vertical;
-        padding: 2;
-        display: none;
-    }
-
-    SettingsScreen.visible {
-        display: block;
-    }
-
-    .setting-group {
-        margin: 1 0;
-        padding: 1;
-        border: solid $primary;
-    }
-
-    .setting-label {
-        text-style: bold;
-        margin-bottom: 1;
-    }
-
-    .setting-item {
-        margin: 1 0;
-    }
+    SettingsScreen { display: none; padding: 1; }
     """
 
-    def compose(self):
-        yield Static("⚙ Settings", classes="setting-label")
+    def compose(self) -> ComposeResult:
+        yield Static("⚙  SETTINGS", classes="screen-header")
 
-        with Collapsible(title="🎨 Appearance", collapsed=False):
-            yield Select(
-                [("Tokyo Night", "tokyo-night"), ("Catppuccin", "catppuccin"),
-                 ("Dracula", "dracula"), ("Gruvbox", "gruvbox"),
-                 ("Nord", "nord"), ("Solarized", "solarized"),
-                 ("One Dark", "one-dark"), ("Monokai", "monokai"),
-                 ("GitHub Dark", "github-dark")],
-                value=cli_config.theme,
-                id="theme_select",
+        with VerticalScroll():
+            # ── API Keys ────────────────────────────────────────────
+            yield Static("API KEYS", classes="settings-section-title")
+            yield Static(
+                "[dim]Keys are saved to [bold]~/.ele-agent/.env[/]. Never commit this file.[/]",
+                classes="settings-hint"
             )
 
-        with Collapsible(title="🔗 Backend", collapsed=False):
-            yield Input(value=str(cli_config.backend_port), placeholder="Port", id="backend_port")
-            yield Switch(value=cli_config.auto_start_backend, id="auto_start_backend")
-            yield Label("Auto-start backend on launch")
+            for env_key, label, placeholder in [
+                ("NVIDIA_API_KEY", "NVIDIA API Key", "nvapi-..."),
+                ("OPENAI_API_KEY", "OpenAI API Key", "sk-..."),
+                ("GEMINI_API_KEY", "Gemini API Key", "AIza..."),
+                ("ANTHROPIC_API_KEY", "Anthropic API Key", "sk-ant-..."),
+                ("GROQ_API_KEY", "Groq API Key", "gsk_..."),
+            ]:
+                current = engine._KEYS.get(env_key, "")
+                masked = current[:4] + "••••" + current[-4:] if len(current) > 8 else ""
+                with Horizontal(classes="settings-row"):
+                    yield Label(f"[dim]{label}[/]", classes="settings-label")
+                    yield Input(
+                        value=masked,
+                        placeholder=placeholder,
+                        password=True,
+                        id=f"key_{env_key}",
+                        classes="settings-input"
+                    )
 
-        with Collapsible(title="🤖 LLM", collapsed=False):
-            yield Select(
-                [("Auto", "auto"), ("Gemini", "gemini"), ("Groq", "groq"),
-                 ("NVIDIA", "nvidia"), ("Claude", "claude"), ("GPT", "openai")],
-                value=cli_config.default_model,
-                id="default_model",
+            yield Button("💾  Save API Keys", id="save_keys_btn", classes="save-btn")
+
+            yield Static(" ", classes="settings-spacer")
+
+            # ── Model selection ─────────────────────────────────────
+            yield Static("DEFAULT MODEL", classes="settings-section-title")
+            with Horizontal(classes="settings-row"):
+                yield Label("[dim]Provider / Model[/]", classes="settings-label")
+                yield Select(
+                    [
+                        ("Auto (best available)", "auto"),
+                        ("NVIDIA — Llama 3.3 70B", "nvidia/meta/llama-3.3-70b-instruct"),
+                        ("NVIDIA — Nemotron 70B", "nvidia/nvidia/llama-3.1-nemotron-70b-instruct"),
+                        ("NVIDIA — DeepSeek R1", "nvidia/deepseek-ai/deepseek-r1"),
+                        ("Gemini — 2.0 Flash", "gemini/gemini-2.0-flash-exp"),
+                        ("Gemini — 1.5 Pro", "gemini/gemini-1.5-pro"),
+                        ("OpenAI — GPT-4o", "openai/gpt-4o"),
+                        ("OpenAI — GPT-4o Mini", "openai/gpt-4o-mini"),
+                        ("Anthropic — Claude 3.5 Sonnet", "anthropic/claude-3-5-sonnet-20241022"),
+                        ("Anthropic — Claude 3 Haiku", "anthropic/claude-3-haiku-20240307"),
+                        ("Groq — Llama 3.3 70B", "groq/llama-3.3-70b-versatile"),
+                        ("Ollama — Llama 3 (local)", "ollama/llama3"),
+                    ],
+                    prompt="Select model",
+                    id="model_select",
+                    classes="settings-select"
+                )
+
+            yield Static(" ", classes="settings-spacer")
+
+            # ── Appearance ──────────────────────────────────────────
+            yield Static("APPEARANCE", classes="settings-section-title")
+            with Horizontal(classes="settings-row"):
+                yield Label("[dim]Theme[/]", classes="settings-label")
+                yield Select(
+                    [
+                        ("Tokyo Night (default)", "tokyo-night"),
+                        ("Catppuccin Mocha", "catppuccin"),
+                        ("Dracula", "dracula"),
+                        ("Gruvbox Dark", "gruvbox"),
+                        ("Nord", "nord"),
+                        ("One Dark", "one-dark"),
+                        ("Monokai", "monokai"),
+                    ],
+                    prompt="Select theme",
+                    id="theme_select",
+                    classes="settings-select"
+                )
+
+            yield Static(" ", classes="settings-spacer")
+
+            # ── Backend ─────────────────────────────────────────────
+            yield Static("BACKEND (Optional)", classes="settings-section-title")
+            yield Static(
+                "[dim]The backend enables browser automation, desktop control, and persistent memory.\n"
+                "Chat works without it using direct API calls.[/]",
+                classes="settings-hint"
             )
+            with Horizontal(classes="settings-row"):
+                yield Label("[dim]Auto-start backend[/]", classes="settings-label")
+                yield Switch(value=cli_config.auto_start_backend, id="auto_backend_switch")
 
-        with Collapsible(title="🔧 Tools", collapsed=False):
-            yield Switch(value=cli_config.file_enabled, id="file_enabled")
-            yield Label("File operations")
-            yield Switch(value=cli_config.shell_enabled, id="shell_enabled")
-            yield Label("Shell commands")
-            yield Switch(value=cli_config.browser_enabled, id="browser_enabled")
-            yield Label("Browser automation")
+            with Horizontal(classes="settings-row"):
+                yield Label("[dim]Backend port[/]", classes="settings-label")
+                yield Input(
+                    value=str(cli_config.backend_port),
+                    placeholder="8000",
+                    id="backend_port_input",
+                    classes="settings-input-sm"
+                )
 
-        with Collapsible(title="🎤 Voice", collapsed=False):
-            yield Switch(value=cli_config.wake_word_enabled, id="wake_word_enabled")
-            yield Label("Wake word (Hey Ellie)")
-            yield Select(
-                [("Auto", "auto"), ("Whisper API", "whisper"), ("Vosk (offline)", "vosk")],
-                value=cli_config.stt_engine,
-                id="stt_engine",
-            )
-            yield Select(
-                [("Auto", "auto"), ("Edge-TTS", "edge"), ("Coqui (offline)", "coqui"), ("System", "pyttsx3")],
-                value=cli_config.tts_engine,
-                id="tts_engine",
-            )
+            yield Static(" ", classes="settings-spacer")
+            with Horizontal():
+                yield Button("💾  Save Settings", id="save_settings_btn", classes="save-btn")
+                yield Button("🔄  Test Connection", id="test_conn_btn", classes="test-btn")
 
-        with Collapsible(title="💾 Save", collapsed=False):
-            yield Button("Save Settings", id="save_btn", variant="primary")
-            yield Button("Reset to Defaults", id="reset_btn", variant="warning")
+    def on_mount(self) -> None:
+        engine.reload_keys()
 
-    async def on_select_changed(self, event: Select.Changed):
-        if event.select.id == "theme_select":
-            cli_config.theme = event.value
-            self.app.apply_theme(event.value)
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save_keys_btn":
+            await self._save_keys()
+        elif event.button.id == "save_settings_btn":
+            self._save_settings()
+        elif event.button.id == "test_conn_btn":
+            await self._test_connection()
 
-    async def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "save_btn":
-            await self.save_settings()
-        elif event.button.id == "reset_btn":
-            await self.reset_settings()
+    async def _save_keys(self) -> None:
+        """Write API keys to ~/.ele-agent/.env"""
+        env_path = Path.home() / ".ele-agent" / ".env"
+        if not env_path.parent.exists():
+            env_path.parent.mkdir(parents=True, exist_ok=True)
 
-    async def save_settings(self):
-        """Save all settings"""
-        # Update config from UI
-        cli_config.theme = self.query_one("#theme_select").value
-        cli_config.backend_port = int(self.query_one("#backend_port").value or 8000)
-        cli_config.auto_start_backend = self.query_one("#auto_start_backend").value
-        cli_config.default_model = self.query_one("#default_model").value
-        cli_config.file_enabled = self.query_one("#file_enabled").value
-        cli_config.shell_enabled = self.query_one("#shell_enabled").value
-        cli_config.browser_enabled = self.query_one("#browser_enabled").value
-        cli_config.wake_word_enabled = self.query_one("#wake_word_enabled").value
-        cli_config.stt_engine = self.query_one("#stt_engine").value
-        cli_config.tts_engine = self.query_one("#tts_engine").value
+        existing: dict = {}
+        if env_path.exists():
+            for line in env_path.read_text("utf-8").splitlines():
+                if "=" in line and not line.startswith("#"):
+                    k, _, v = line.partition("=")
+                    existing[k.strip()] = v.strip()
 
-        save_cli_config(cli_config)
-        self.app.apply_theme(cli_config.theme)
-        self.notify("Settings saved!", title="Success")
+        key_fields = [
+            ("NVIDIA_API_KEY", "key_NVIDIA_API_KEY"),
+            ("OPENAI_API_KEY", "key_OPENAI_API_KEY"),
+            ("GEMINI_API_KEY", "key_GEMINI_API_KEY"),
+            ("ANTHROPIC_API_KEY", "key_ANTHROPIC_API_KEY"),
+            ("GROQ_API_KEY", "key_GROQ_API_KEY"),
+        ]
 
-    async def reset_settings(self):
-        """Reset to defaults"""
-        from ..config import CLIConfig
-        new_config = CLIConfig()
-        # Update UI
-        self.query_one("#theme_select").value = new_config.theme
-        self.query_one("#backend_port").value = str(new_config.backend_port)
-        self.query_one("#auto_start_backend").value = new_config.auto_start_backend
-        self.query_one("#default_model").value = new_config.default_model
-        self.query_one("#file_enabled").value = new_config.file_enabled
-        self.query_one("#shell_enabled").value = new_config.shell_enabled
-        self.query_one("#browser_enabled").value = new_config.browser_enabled
-        self.query_one("#wake_word_enabled").value = new_config.wake_word_enabled
-        self.query_one("#stt_engine").value = new_config.stt_engine
-        self.query_one("#tts_engine").value = new_config.tts_engine
+        updated = 0
+        for env_key, widget_id in key_fields:
+            try:
+                inp = self.query_one(f"#{widget_id}", Input)
+                val = inp.value.strip()
+                if val and "••••" not in val and len(val) > 4:
+                    existing[env_key] = val
+                    updated += 1
+            except Exception:
+                pass
 
-        self.notify("Settings reset to defaults", title="Reset")
+        lines = [f"{k}={v}" for k, v in existing.items()]
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        engine.reload_keys()
+        self.app.notify(f"✅ Saved {updated} API key(s) to ~/.ele-agent/.env")
+
+    def _save_settings(self) -> None:
+        try:
+            # Theme
+            try:
+                theme_sel = self.query_one("#theme_select", Select)
+                if theme_sel.value and theme_sel.value != Select.BLANK:
+                    cli_config.theme = str(theme_sel.value)
+                    self.app.apply_theme(cli_config.theme)
+            except Exception:
+                pass
+
+            # Model
+            try:
+                model_sel = self.query_one("#model_select", Select)
+                if model_sel.value and model_sel.value != Select.BLANK:
+                    val = str(model_sel.value)
+                    if val == "auto":
+                        store.set_active_model("auto", "auto")
+                    elif "/" in val:
+                        provider, model = val.split("/", 1)
+                        store.set_active_model(model, provider)
+            except Exception:
+                pass
+
+            # Backend port
+            try:
+                port_inp = self.query_one("#backend_port_input", Input)
+                cli_config.backend_port = int(port_inp.value or "8000")
+            except Exception:
+                pass
+
+            # Auto-start
+            try:
+                sw = self.query_one("#auto_backend_switch", Switch)
+                cli_config.auto_start_backend = sw.value
+            except Exception:
+                pass
+
+            save_cli_config(cli_config)
+            self.app.notify("✅ Settings saved")
+        except Exception as e:
+            self.app.notify(f"⚠ Save failed: {e}", severity="error")
+
+    async def _test_connection(self) -> None:
+        self.app.notify("Testing LLM connection...")
+        try:
+            engine.reload_keys()
+            provider, model = engine.get_best_provider()
+            if provider == "none":
+                self.app.notify("⚠ Please enter and save an API key first", severity="warning")
+                return
+
+            msgs = [{"role": "user", "content": "Say 'OK' only."}]
+            result = ""
+            error_found = None
+            async for event in engine.stream_response(msgs, provider, model):
+                if event.type == "delta":
+                    result += event.content
+                elif event.type == "error":
+                    error_found = event.content
+                    break
+                elif event.type == "final":
+                    break
+
+            if error_found:
+                self.app.notify(f"❌ {error_found[:60]}", severity="error")
+            elif result:
+                self.app.notify(f"✅ {provider.upper()} connected! ({result[:20].strip()})")
+            else:
+                self.app.notify("⚠ No response from LLM", severity="warning")
+        except Exception as e:
+            self.app.notify(f"❌ Connection failed: {e}", severity="error")

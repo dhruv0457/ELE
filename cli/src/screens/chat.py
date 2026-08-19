@@ -1,341 +1,447 @@
-"""Chat Screen - Professional Right-Side Layout with Thinking Panel"""
+"""JARVIS-style Chat Screen — Hacker terminal aesthetic"""
 import asyncio
 import uuid
-from datetime import datetime
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal, Vertical
+from textual.widgets import Button, Static, ListView, ListItem, Label, Markdown
+from textual.binding import Binding
 
-from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Static, ListView, ListItem, Button, Label, RichLog
-from ..widgets.safe_text_area import SafeTextArea
-from textual import events
-
-from ..store import store, Message
+from ..store import store, Message, AgentStatus
 from ..widgets.message_bubble import MessageBubble
-from .. import backend as be
+from ..widgets.safe_text_area import SafeTextArea
+from .. import llm as engine
+
+
+class SessionListItem(ListItem):
+    """Custom list item representing a session without hardcoded widget IDs."""
+    def __init__(self, session_id: str, label_text: str) -> None:
+        super().__init__(Label(label_text))
+        self.session_id = session_id
 
 
 class ChatScreen(Container):
-    """Chat Mode Screen - Professional right-side chat layout with thinking panel."""
+    """Main JARVIS chat interface."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._token = None
-        self._session_id = None
-        self._auth_task = None
+    BINDINGS = [
+        Binding("enter", "send", "Send", show=False),
+        Binding("ctrl+l", "clear_chat", "Clear", show=False),
+        Binding("ctrl+n", "new_session", "New Session", show=False),
+    ]
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         self._streaming = False
+        self._current_messages: list = []  # conversation history for LLM
 
-    def compose(self):
-        # Left sidebar
-        yield Container(
-            Static("💬 ELE", classes="sidebar-title"),
-            Button("💬 Chat", id="nav_chat", classes="sidebar-item -active"),
-            Button("📋 Sessions", id="nav_sessions", classes="sidebar-item"),
-            Button("🔧 Tools", id="nav_tools", classes="sidebar-item"),
-            Button("🔌 Plugins", id="nav_plugins", classes="sidebar-item"),
-            Button("⚙ Settings", id="nav_settings", classes="sidebar-item"),
-            classes="sidebar",
-        )
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="chat_layout"):
+            # ── Sidebar ─────────────────────────────────────────────
+            with Vertical(id="sidebar"):
+                yield Static("⚡ ELE", id="sidebar_logo")
+                yield Static("─" * 18, classes="sidebar-divider")
+                yield Button("󰭹  Chat", id="nav_chat", classes="nav-item active")
+                yield Button("󰄙  Automate", id="nav_automate", classes="nav-item")
+                yield Button("  Tools", id="nav_tools", classes="nav-item")
+                yield Button("  Settings", id="nav_settings", classes="nav-item")
+                yield Static("─" * 18, classes="sidebar-divider")
+                yield Static("SESSIONS", classes="sidebar-section-title")
+                yield ListView(id="session_list")
+                yield Button("+ New", id="new_session_btn", classes="new-session-btn")
 
-        # Right chat area - with thinking panel
-        yield Container(
-            Static("● Connecting...", id="status_line", classes="status-line"),
-            Container(
-                ListView(id="messages_list"),
-                id="messages_container",
-            ),
-            # Thinking panel - shows live thoughts
-            Static("", id="thinking_panel", classes="thinking-panel"),
-            Container(
-                Horizontal(
-                    SafeTextArea(id="input_area", placeholder="Ask anything... (Enter to send)"),
-                    Button("🎤", id="voice_btn"),
-                    Button("Send", id="send_btn", classes="-primary"),
-                    classes="input_row",
-                ),
-                id="input_bar",
-            ),
-            id="chat_main",
-        )
+            # ── Main chat area ───────────────────────────────────────
+            with Vertical(id="chat_main"):
+                # Status bar
+                yield Static("", id="chat_status_bar")
+                # Messages
+                yield ListView(id="messages_list")
+                # Thinking panel (hidden by default)
+                yield Static("", id="thinking_panel", classes="thinking-panel hidden")
+                # Input bar
+                with Horizontal(id="input_bar"):
+                    yield SafeTextArea(id="input_area", tab_behavior="indent")
+                    with Vertical(id="input_buttons"):
+                        yield Button("▶", id="send_btn", classes="send-btn")
+                        yield Button("🎤", id="voice_btn", classes="voice-btn")
 
-    def on_mount(self):
-        self.load_messages()
-        self._auth_task = asyncio.create_task(self._connect_backend())
-        self.call_later(self._focus_input)
+    def on_mount(self) -> None:
+        self._load_session_list()
+        self._load_messages()
+        self._update_status_bar()
+        self.query_one("#input_area").focus()
+        # Non-blocking: check LLM availability
+        self.run_worker(self._init_llm(), exclusive=False)
 
-    def _focus_input(self):
+    async def _init_llm(self) -> None:
+        """Detect best available LLM and update status bar."""
+        engine.reload_keys()
+        provider, model = engine.get_best_provider()
+        store.set_active_model(model, provider)
+        store.set_agent_status(AgentStatus.IDLE)
+        self._update_status_bar()
+
+    def _update_status_bar(self) -> None:
+        """Update top status bar with model and connection info."""
         try:
-            self.query_one("#input_area").focus()
+            status = self.query_one("#chat_status_bar", Static)
+            provider = store.active_provider.upper() if store.active_provider else "NO KEY"
+            model_short = store.active_model.split("/")[-1] if store.active_model else "—"
+            connected_dot = "[#00FF9D]●[/]" if store.backend_connected else "[#FF3366]●[/]"
+            be_label = "Backend: ON" if store.backend_connected else "Backend: OFF"
+
+            # Agent status
+            status_icons = {
+                AgentStatus.IDLE: "[dim]idle[/]",
+                AgentStatus.THINKING: "[#A855F7]thinking...[/]",
+                AgentStatus.WORKING: "[#F59E0B]working...[/]",
+                AgentStatus.STREAMING: "[#00FFE0]streaming[/]",
+                AgentStatus.ERROR: "[#FF3366]error[/]",
+            }
+            agent_status = status_icons.get(store.agent_status, "[dim]idle[/]")
+
+            tokens = store.token_usage["total"]
+            token_str = f"[dim]{tokens:,} tokens[/]" if tokens > 0 else ""
+
+            parts = [
+                f"[bold #00FFE0]{provider}[/] [dim]·[/] [dim]{model_short}[/]",
+                f"{connected_dot} [dim]{be_label}[/]",
+                agent_status,
+            ]
+            if token_str:
+                parts.append(token_str)
+
+            status.update("  ".join(parts))
         except Exception:
             pass
 
-    async def _connect_backend(self):
-        status = self.query_one("#status_line", Static)
-        try:
-            if not be.is_backend_up():
-                status.update("● Backend: NOT running (start backend on :8000)")
-                store.set_backend_status(False, "down")
-                return
-            tok = be.login_or_register()
-            self._token = tok["access_token"]
-            self._session_id = f"session_{uuid.uuid4().hex[:8]}"
-            store.set_backend_status(True, "connected")
-            status.update(f"● Backend: connected as {tok['email']}")
-        except Exception as e:
-            store.set_backend_status(False, "error")
-            status.update(f"● Backend: error - {e}")
+    def _load_session_list(self) -> None:
+        lst = self.query_one("#session_list", ListView)
+        lst.clear()
+        for sid, session in store.sessions.items():
+            label = session.title[:16] + ("…" if len(session.title) > 16 else "")
+            active = " ●" if sid == store.current_session_id else ""
+            item = SessionListItem(sid, f"[dim]{label}{active}[/]")
+            lst.append(item)
 
-    def load_messages(self):
-        messages_list = self.query_one("#messages_list", expect_type=ListView)
-        messages_list.clear()
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        if event.list_view.id == "session_list":
+            item = event.item
+            if isinstance(item, SessionListItem):
+                sid = item.session_id
+                if sid and sid in store.sessions and sid != store.current_session_id:
+                    store.switch_session(sid)
+                    self._load_messages()
+                    self._load_session_list()
+
+    def _load_messages(self) -> None:
+        lst = self.query_one("#messages_list", ListView)
+        lst.clear()
+        self._current_messages = []
         for msg in store.messages:
-            messages_list.append(ListItem(MessageBubble(msg)))
-        self.call_later(self.scroll_to_bottom)
+            self._add_bubble(msg)
+            self._current_messages.append({"role": msg.role, "content": msg.content})
+        self._scroll_bottom()
 
-    def scroll_to_bottom(self):
+    def _add_bubble(self, msg: Message) -> "MessageBubble":
+        lst = self.query_one("#messages_list", ListView)
+        bubble = MessageBubble(msg)
+        item = ListItem(bubble)
+        lst.append(item)
+        self._scroll_bottom()
+        return bubble
+
+    def _scroll_bottom(self) -> None:
         try:
-            messages_list = self.query_one("#messages_list", expect_type=ListView)
-            if messages_list.children:
-                messages_list.index = len(messages_list.children) - 1
+            lst = self.query_one("#messages_list", ListView)
+            lst.scroll_end(animate=False)
         except Exception:
             pass
 
-    async def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "send_btn":
-            await self.send_message()
-        elif event.button.id == "voice_btn":
-            self.toggle_voice()
-            event.button.toggle_class("-active")
-        elif event.button.id.startswith("nav_"):
-            self._switch_sidebar(event.button.id)
-
-    def _switch_sidebar(self, nav_id: str):
-        for btn_id in ["nav_chat", "nav_sessions", "nav_tools", "nav_plugins", "nav_settings"]:
-            try:
-                btn = self.query_one(f"#{btn_id}")
-                btn.remove_class("-active")
-            except Exception:
-                pass
+    def _set_thinking(self, visible: bool, text: str = "") -> None:
         try:
-            self.query_one(f"#{nav_id}").add_class("-active")
+            panel = self.query_one("#thinking_panel", Static)
+            if visible:
+                panel.update(text)
+                panel.remove_class("hidden")
+            else:
+                panel.add_class("hidden")
+                panel.update("")
         except Exception:
             pass
 
-        screen_map = {
-            "nav_chat": "chat",
-            "nav_sessions": "chat",
-            "nav_tools": "tools",
-            "nav_plugins": "plugins",
-            "nav_settings": "settings",
-        }
-        screen = screen_map.get(nav_id)
-        if screen and screen != "chat":
-            self.app.switch_screen(screen)
+    # ── Sending messages ─────────────────────────────────────────────────────
 
-    async def on_text_area_submitted(self, event):
-        await self.send_message()
-
-    async def send_message(self):
-        input_area = self.query_one("#input_area")
+    async def send_message(self) -> None:
+        if self._streaming:
+            return
+        input_area = self.query_one("#input_area", SafeTextArea)
         text = input_area.text.strip()
         if not text:
             return
-        input_area.clear()
+        input_area.text = ""
 
-        # Add user message
-        user_msg = Message(
-            id=f"msg_{uuid.uuid4().hex[:8]}",
-            role="user",
-            content=text,
-            timestamp=datetime.now(),
-        )
-        store.add_message(user_msg)
-        self.add_message_bubble(user_msg)
-
-        if not self._token and self._auth_task is not None:
-            try:
-                await asyncio.wait_for(asyncio.shield(self._auth_task), timeout=15)
-            except (asyncio.TimeoutError, Exception):
-                pass
-
-        # Create streaming assistant message
-        thinking_msg = Message(
-            id="thinking",
-            role="assistant",
-            content="",
-            is_streaming=True,
-            timestamp=datetime.now(),
-        )
-        store.add_message(thinking_msg)
-        bubble = self.add_message_bubble(thinking_msg)
-
-        if not self._token:
-            thinking_msg.content = "Backend not connected. Start it on :8000."
-            thinking_msg.is_streaming = False
-            self._refresh_bubble(bubble, thinking_msg)
+        # Slash commands
+        if text.startswith("/"):
+            await self._handle_slash(text)
             return
 
+        # Add user message
+        user_msg = Message(role="user", content=text)
+        store.add_message(user_msg)
+        self._add_bubble(user_msg)
+        self._current_messages.append({"role": "user", "content": text})
+
+        # Add assistant placeholder
+        asst_msg = Message(role="assistant", content="", is_streaming=True)
+        store.add_message(asst_msg)
+        bubble = self._add_bubble(asst_msg)
+
         self._streaming = True
-        asyncio.create_task(self._stream_response(text, thinking_msg, bubble))
+        store.set_agent_status(AgentStatus.STREAMING)
+        self._update_status_bar()
 
-    def add_message_bubble(self, msg):
-        bubble = MessageBubble(msg)
-        self.query_one("#messages_list").append(ListItem(bubble))
-        self.scroll_to_bottom()
-        return bubble
-
-    def _refresh_bubble(self, bubble, msg):
         try:
-            bubble.update_content(msg.content)
-        except Exception:
-            pass
+            await self._stream_response(text, asst_msg, bubble)
+        finally:
+            self._streaming = False
+            store.set_agent_status(AgentStatus.IDLE)
+            self._set_thinking(False)
+            self._update_status_bar()
+            self._load_session_list()
 
-    def _update_thinking_panel(self, thoughts_acc, tools_acc, current_tool=None):
-        """Update the thinking panel with live thoughts."""
-        thinking_panel = self.query_one("#thinking_panel", Static)
-        lines = []
-        
-        if thoughts_acc:
-            lines.append("[bold]💭 Thinking:[/bold]")
-            for t in thoughts_acc[-5:]:  # Show last 5 thoughts
-                lines.append(f"  {t}")
-        
-        if tools_acc:
-            lines.append("")
-            lines.append("[bold]⚙️ Tools:[/bold]")
-            for tool in tools_acc:
-                lines.append(f"  ⚙ {tool}")
-        
-        if current_tool:
-            lines.append("")
-            lines.append(f"[bold yellow]▶ Running: {current_tool}[/bold yellow]")
-        
-        thinking_panel.update("\n".join(lines) if lines else "")
+    async def _stream_response(
+        self, user_text: str, msg: Message, bubble: "MessageBubble"
+    ) -> None:
+        thoughts_acc = ""
+        accumulated = ""
 
-    async def _stream_response(self, user_text, thinking_msg, bubble):
-        thoughts_acc = []
-        tools_acc = []
-        content_acc = ""
-
-    def _refresh_bubble(self, bubble, msg):
         try:
-            bubble.update_content(msg.content)
-        except Exception:
-            pass
+            async for event in engine.stream_response(
+                messages=self._current_messages,
+                provider=store.active_provider or "auto",
+                model=store.active_model or "auto",
+            ):
+                if event.type == "model_info":
+                    store.set_active_model(event.model, store.active_provider)
+                    self._update_status_bar()
 
-    def add_message_bubble(self, msg):
-        bubble = MessageBubble(msg)
-        self.query_one("#messages_list").append(ListItem(bubble))
-        self.scroll_to_bottom()
-        return bubble
+                elif event.type == "thought":
+                    thoughts_acc += event.content + " "
+                    store.set_agent_status(AgentStatus.THINKING)
+                    self._set_thinking(True, f"[#A855F7]🧠 Thinking:[/] [italic #A855F7]{thoughts_acc.strip()}[/]")
+                    self._update_status_bar()
 
-    def scroll_to_bottom(self):
-        try:
-            messages_list = self.query_one("#messages_list", expect_type=ListView)
-            if messages_list.children:
-                messages_list.index = len(messages_list.children) - 1
-        except Exception:
-            pass
+                elif event.type == "tool_start":
+                    store.set_agent_status(AgentStatus.WORKING, event.tool)
+                    self._set_thinking(
+                        True,
+                        f"[#F59E0B]⚙ Running:[/] [bold]{event.tool}[/]"
+                    )
+                    self._update_status_bar()
 
-    async def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "send_btn":
-            await self.send_message()
-        elif event.button.id == "voice_btn":
-            self.toggle_voice()
-            event.button.toggle_class("-active")
-        elif event.button.id.startswith("nav_"):
-            self._switch_sidebar(event.button.id)
+                elif event.type == "tool_end":
+                    result_preview = event.content[:120]
+                    self._set_thinking(
+                        True,
+                        f"[#00FF9D]✓ {event.tool}[/] [dim]→ {result_preview}[/]"
+                    )
+                    # Inject tool result into conversation context
+                    self._current_messages.append({
+                        "role": "assistant",
+                        "content": f"TOOL_RESULT {event.tool}: {event.content}"
+                    })
+                    await asyncio.sleep(0.5)  # Brief pause so user can see result
 
-    def _switch_sidebar(self, nav_id: str):
-        for btn_id in ["nav_chat", "nav_sessions", "nav_tools", "nav_plugins", "nav_settings"]:
-            try:
-                btn = self.query_one(f"#{btn_id}")
-                btn.remove_class("-active")
-            except Exception:
-                pass
-        try:
-            self.query_one(f"#{nav_id}").add_class("-active")
-        except Exception:
-            pass
+                elif event.type == "delta":
+                    accumulated += event.content
+                    msg.content = accumulated
+                    bubble.update_content(accumulated)
+                    self._scroll_bottom()
 
-        screen_map = {
-            "nav_chat": "chat",
-            "nav_sessions": "chat",
-            "nav_tools": "tools",
-            "nav_plugins": "plugins",
-            "nav_settings": "settings",
-        }
-        screen = screen_map.get(nav_id)
-        if screen and screen != "chat":
-            self.app.switch_screen(screen)
+                elif event.type == "final":
+                    msg.content = accumulated or event.content
+                    msg.is_streaming = False
+                    bubble.update_content(msg.content, done=True)
+                    # Append to conversation history
+                    self._current_messages.append({
+                        "role": "assistant",
+                        "content": msg.content
+                    })
+                    self._scroll_bottom()
+                    return
 
-    async def on_text_area_submitted(self, event):
-        await self.send_message()
+                elif event.type == "error":
+                    msg.content = f"{event.content}"
+                    msg.is_streaming = False
+                    msg.error = True
+                    bubble.update_content(msg.content, done=True, error=True)
+                    self._scroll_bottom()
+                    return
 
-    async def _connect_backend(self):
-        status = self.query_one("#status_line", Static)
-        try:
-            if not be.is_backend_up():
-                status.update("● Backend: NOT running (start backend on :8000)")
-                store.set_backend_status(False, "down")
-                return
-            tok = be.login_or_register()
-            self._token = tok["access_token"]
-            self._session_id = f"session_{uuid.uuid4().hex[:8]}"
-            store.set_backend_status(True, "connected")
-            status.update(f"● Backend: connected as {tok['email']}")
         except Exception as e:
-            store.set_backend_status(False, "error")
-            status.update(f"● Backend: error - {e}")
+            msg.content = f"⚠ Unexpected error: {e}"
+            msg.is_streaming = False
+            msg.error = True
+            bubble.update_content(msg.content, done=True, error=True)
 
-    def load_messages(self):
-        messages_list = self.query_one("#messages_list", expect_type=ListView)
-        messages_list.clear()
-        for msg in store.messages:
-            messages_list.append(ListItem(MessageBubble(msg)))
-        self.call_later(self.scroll_to_bottom)
+    # ── Slash commands ────────────────────────────────────────────────────────
 
-    def scroll_to_bottom(self):
-        try:
-            messages_list = self.query_one("#messages_list", expect_type=ListView)
-            if messages_list.children:
-                messages_list.index = len(messages_list.children) - 1
-        except Exception:
-            pass
+    async def _handle_slash(self, cmd: str) -> None:
+        parts = cmd.split(maxsplit=1)
+        command = parts[0].lower()
+        arg = parts[1] if len(parts) > 1 else ""
 
-    async def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "send_btn":
-            await self.send_message()
-        elif event.button.id == "voice_btn":
-            self.toggle_voice()
-            event.button.toggle_class("-active")
-        elif event.button.id.startswith("nav_"):
-            self._switch_sidebar(event.button.id)
-
-    def _switch_sidebar(self, nav_id: str):
-        for btn_id in ["nav_chat", "nav_sessions", "nav_tools", "nav_plugins", "nav_settings"]:
-            try:
-                btn = self.query_one(f"#{btn_id}")
-                btn.remove_class("-active")
-            except Exception:
-                pass
-        try:
-            self.query_one(f"#{nav_id}").add_class("-active")
-        except Exception:
-            pass
-
-        screen_map = {
-            "nav_chat": "chat",
-            "nav_sessions": "chat",
-            "nav_tools": "tools",
-            "nav_plugins": "plugins",
-            "nav_settings": "settings",
+        responses = {
+            "/help": (
+                "**ELE Agent Commands**\n\n"
+                "| Command | Action |\n"
+                "|---------|--------|\n"
+                "| `/help` | Show this help |\n"
+                "| `/clear` | Clear chat |\n"
+                "| `/model [name]` | Switch model |\n"
+                "| `/models` | List available models |\n"
+                "| `/keys` | Show API key status |\n"
+                "| `/browse <url>` | Open URL in browser |\n"
+                "| `/shell <cmd>` | Run a shell command |\n"
+                "| `/new` | New session |\n"
+            ),
+            "/models": self._get_models_info(),
+            "/keys": self._get_keys_info(),
         }
-        screen = screen_map.get(nav_id)
-        if screen and screen != "chat":
-            self.app.switch_screen(screen)
 
-    async def on_text_area_submitted(self, event):
-        await self.send_message()
+        if command == "/clear":
+            store.clear_messages()
+            self._current_messages = []
+            self._load_messages()
+            return
 
-    def toggle_voice(self):
+        if command == "/new":
+            store.create_session()
+            self._current_messages = []
+            self._load_messages()
+            self._load_session_list()
+            self.app.notify("New session created")
+            return
+
+        if command == "/model" and arg:
+            await self._switch_model(arg.strip())
+            return
+
+        if command == "/shell" and arg:
+            import subprocess
+            result = subprocess.run(arg, shell=True, capture_output=True, text=True, timeout=30)
+            content = f"```\n$ {arg}\n{result.stdout or result.stderr or '(no output)'}\n```"
+            msg = Message(role="assistant", content=content)
+            store.add_message(msg)
+            self._add_bubble(msg)
+            return
+
+        if command == "/browse" and arg:
+            import webbrowser
+            webbrowser.open(arg)
+            msg = Message(role="assistant", content=f"Opened [{arg}]({arg}) in browser.")
+            store.add_message(msg)
+            self._add_bubble(msg)
+            return
+
+        content = responses.get(command, f"Unknown command: `{command}`. Type `/help` for commands.")
+        msg = Message(role="assistant", content=content)
+        store.add_message(msg)
+        self._add_bubble(msg)
+
+    def _get_models_info(self) -> str:
+        engine.reload_keys()
+        providers = engine.get_available_providers()
+        lines = ["**Available Providers & Models**\n"]
+        model_map = {
+            "nvidia": "nvidia/llama-3.3-70b-instruct, nvidia/nemotron-4-340b",
+            "gemini": "gemini-2.0-flash-exp, gemini-1.5-pro, gemini-1.5-flash",
+            "openai": "gpt-4o, gpt-4o-mini, gpt-3.5-turbo",
+            "anthropic": "claude-3-5-sonnet-20241022, claude-3-haiku-20240307",
+            "groq": "llama3-70b-8192, mixtral-8x7b-32768",
+            "ollama": "llama3, mistral, codellama (local)",
+        }
+        for p in providers:
+            icon = "✅" if p != "ollama" else "🟡"
+            models = model_map.get(p, "—")
+            lines.append(f"**{icon} {p.upper()}**: {models}")
+        return "\n".join(lines)
+
+    def _get_keys_info(self) -> str:
+        engine.reload_keys()
+        lines = ["**API Key Status**\n"]
+        key_map = [
+            ("NVIDIA_API_KEY", "NVIDIA"),
+            ("OPENAI_API_KEY", "OpenAI"),
+            ("GEMINI_API_KEY", "Gemini"),
+            ("ANTHROPIC_API_KEY", "Anthropic"),
+            ("GROQ_API_KEY", "Groq"),
+        ]
+        for env_key, label in key_map:
+            val = engine._KEYS.get(env_key, "")
+            if val:
+                masked = val[:4] + "..." + val[-4:] if len(val) > 8 else "****"
+                lines.append(f"✅ **{label}**: `{masked}`")
+            else:
+                lines.append(f"❌ **{label}**: not set")
+        lines.append(
+            "\n_Add keys via **Settings (Ctrl+4)**, `ele setup`, or in `~/.ele-agent/.env`._"
+        )
+        return "\n".join(lines)
+
+    async def _switch_model(self, model_str: str) -> None:
+        """Parse 'provider/model' or just 'provider'."""
+        if "/" in model_str:
+            parts = model_str.split("/", 1)
+            provider = parts[0].lower()
+            model = model_str
+        else:
+            provider = model_str.lower()
+            model = engine._default_model_for(provider)
+        store.set_active_model(model, provider)
+        self._update_status_bar()
+        msg = Message(role="assistant", content=f"Switched to **{provider.upper()}** — `{model}`")
+        store.add_message(msg)
+        self._add_bubble(msg)
+
+    # ── Button handlers ───────────────────────────────────────────────────────
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        if btn_id == "send_btn":
+            await self.send_message()
+        elif btn_id == "voice_btn":
+            self._toggle_voice()
+        elif btn_id == "new_session_btn":
+            store.create_session()
+            self._current_messages = []
+            self._load_messages()
+            self._load_session_list()
+        elif btn_id and btn_id.startswith("nav_"):
+            screen = btn_id.replace("nav_", "")
+            self.app.switch_to(screen)
+
+    def _toggle_voice(self) -> None:
         store.voice_listening = not store.voice_listening
-        self.notify("Voice " + ("enabled" if store.voice_listening else "disabled"))
+        btn = self.query_one("#voice_btn", Button)
+        if store.voice_listening:
+            btn.label = "🔴"
+            self.app.notify("🎤 Voice listening ON")
+        else:
+            btn.label = "🎤"
+            self.app.notify("Voice OFF")
+
+    # ── Key bindings ──────────────────────────────────────────────────────────
+
+    def action_send(self) -> None:
+        self.run_worker(self.send_message())
+
+    def action_clear_chat(self) -> None:
+        store.clear_messages()
+        self._current_messages = []
+        self._load_messages()
+
+    def action_new_session(self) -> None:
+        store.create_session()
+        self._current_messages = []
+        self._load_messages()
+        self._load_session_list()

@@ -353,27 +353,27 @@ class DesktopExecutor:
         
         try:
             if action == "move_mouse":
-                return await self.mouse.move_to(params.get("x", 0), params.get("y", 0))
+                return await self.input.move_to(params.get("x", 0), params.get("y", 0))
             elif action == "click":
-                return await self.mouse.click(params.get("x"), params.get("y"), 
+                return await self.input.click(params.get("x"), params.get("y"), 
                                              params.get("button", "left"), 
                                              params.get("clicks", 1))
             elif action == "double_click":
-                return await self.mouse.double_click(params.get("x"), params.get("y"))
+                return await self.input.double_click(params.get("x"), params.get("y"))
             elif action == "right_click":
-                return await self.mouse.right_click(params.get("x"), params.get("y"))
+                return await self.input.right_click(params.get("x"), params.get("y"))
             elif action == "drag":
-                return await self.mouse.drag(params["start_x"], params["start_y"], 
+                return await self.input.drag(params["start_x"], params["start_y"], 
                                              params["end_x"], params["end_y"],
                                              params.get("duration", 1.0))
-            elif action == "type":
-                return await self.keyboard.type_text(params["text"])
+            elif action in ("type", "type_text"):
+                return await self.input.type_text(params["text"])
             elif action == "press_key":
-                return await self.keyboard.press_key(params["key"], params.get("presses", 1))
+                return await self.input.press_key(params["key"], params.get("presses", 1))
             elif action == "hotkey":
-                return await self.keyboard.hotkey(*params["keys"])
+                return await self.input.hotkey(*params["keys"])
             elif action == "scroll":
-                return await self.mouse.scroll(params.get("clicks", 3), params.get("x"), params.get("y"))
+                return await self.input.scroll(params.get("clicks", 3), params.get("x"), params.get("y"))
             elif action == "screenshot":
                 return await self.screen_capture.capture_screen()
             elif action == "screenshot_region":
@@ -383,13 +383,14 @@ class DesktopExecutor:
                 return await self.screen_capture.get_text_at(params["x"], params["y"], 
                                                              params.get("radius", 50))
             elif action == "launch_app":
-                return await self.app_control.launch(params["app"], params.get("args", []))
+                app_name = params.get("app") or params.get("name")
+                return await self.app_control.launch(app_name, params.get("args", []))
             elif action == "focus_window":
                 return await self.app_control.focus(params["title"])
             elif action == "close_window":
                 return await self.app_control.close(params["title"])
             elif action == "list_windows":
-                return await self.app_control.list_windows()
+                return await self.app_control.get_window_info()
             elif action == "get_window_info":
                 return await self.app_control.get_window_info(params.get("title"))
             elif action == "ocr_region":
@@ -398,12 +399,10 @@ class DesktopExecutor:
             elif action == "capture_region":
                 return await self.screen_capture.capture_region(params["x"], params["y"],
                                                                 params["width"], params["height"])
-            elif action == "move_mouse":
-                return await self.mouse.move_to(params["x"], params["y"])
             elif action == "click_at":
-                return await self.mouse.click(params["x"], params["y"])
+                return await self.input.click(params["x"], params["y"])
             elif action == "drag_drop":
-                return await self.mouse.drag(params["start_x"], params["start_y"], 
+                return await self.input.drag(params["start_x"], params["start_y"], 
                                              params["end_x"], params["end_y"],
                                              params.get("duration", 1.0))
             else:
