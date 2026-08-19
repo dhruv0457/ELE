@@ -1,109 +1,138 @@
-"""Message Bubble Widget"""
-from textual.widgets import Static, Label, Button, Collapsible
-from textual.containers import Container, Horizontal, Vertical
-from textual import events
+"""Message Bubble Widget - Professional Style"""
+from textual.widgets import Static, Label
+from textual.containers import Container, Vertical, Horizontal
 
 from ..store import Message
 
 
 class MessageBubble(Container):
-    """Message bubble with rich metadata"""
+    """Professional message bubble with metadata."""
 
     DEFAULT_CSS = """
     MessageBubble {
-        margin: 1;
-        padding: 1;
-        border: solid $primary;
-        background: $surface;
+        margin: 1 2;
+        padding: 0;
+        border: none;
+        background: transparent;
+        width: 1fr;
     }
 
-    .user-message {
-        background: $primary;
-        color: $text;
-        margin: 0 20;
+    .bubble-wrapper {
+        width: 1fr;
+        padding: 0;
     }
 
-    .assistant-message {
-        background: $surface;
-        border: solid $primary;
+    .user-bubble {
+        background: #1e88e5;
+        color: #ffffff;
+        margin: 0 0 0 6;
+        padding: 1 2;
+        max-width: 85%;
     }
 
-    .message-header {
-        height: auto;
-        margin-bottom: 1;
+    .assistant-bubble {
+        background: #f8f9fa;
+        color: #1a1a2e;
+        margin: 0 6 0 0;
+        padding: 1 2;
+        border: solid #e0e4ec;
+        max-width: 85%;
     }
 
-    .message-role {
-        text-style: bold;
-        color: $primary;
-    }
-
-    .message-time {
-        color: $text-muted;
+    .message-meta {
+        color: #8a8aa0;
         text-style: dim;
+        margin-bottom: 1;
+        height: 1;
     }
 
-    .message-content {
+    .bubble-content {
+    }
+
+    .thought-preview {
+        color: #8a8aa0;
+        text-style: italic;
         margin: 1 0;
-    }
-
-    .thoughts-section {
-        border-left: solid $primary;
-        margin-left: 1;
         padding-left: 1;
+        border-left: solid #64b5f6;
+        background: #f8f9fa;
     }
 
-    .thought-line {
-        color: $text-muted;
+    .tool-preview {
+        color: #f57f17;
+        margin: 1 0;
+        padding: 0 1;
+        background: #f8f9fa;
+        border-left: solid #f57f17;
+    }
+
+    .streaming-cursor {
+        color: #1e88e5;
+        text-style: bold blink;
     }
 
     .tools-used {
         margin-top: 1;
+        height: auto;
     }
 
     .tool-badge {
-        background: $primary;
-        color: $text;
+        background: #64b5f6;
+        color: #ffffff;
         padding: 0 1;
         margin-right: 1;
     }
 
-    .streaming-indicator {
-        color: $warning;
-        text-style: bold blink;
+    .message-time {
+        color: #8a8aa0;
+        text-style: dim;
+    }
+
+    .message-role {
+        text-style: bold;
+        color: #1e88e5;
     }
     """
 
     def __init__(self, message: 'Message'):
         super().__init__()
         self.message = message
-        self.add_class("user-message" if message.role == "user" else "assistant-message")
+        self.add_class("user-bubble" if message.role == "user" else "assistant-bubble")
+        self.add_class("bubble-wrapper")
 
     def compose(self):
-        role_label = "👤 You" if self.message.role == "user" else "🤖 Ellie"
-        time_str = self.message.timestamp.strftime("%H:%M:%S")
+        role_label = "You" if self.message.role == "user" else "Ellie"
+        time_str = self.message.timestamp.strftime("%H:%M") if hasattr(self.message, 'timestamp') and self.message.timestamp else ""
 
         yield Container(
-            Label(f"{role_label} • {time_str}", classes="message-header"),
-            Label(self.message.content or "", classes="message-content", id="content"),
-            id="message_main",
+            Horizontal(
+                Label(f"{role_label}", classes="message-role"),
+                Label(time_str, classes="message-time"),
+                classes="message-meta",
+            ),
+            Label(self.message.content or "", classes="bubble-content", id="content"),
+            id="bubble_main",
         )
 
         if self.message.thoughts:
-            with Collapsible(title=f"Thoughts ({len(self.message.thoughts)})", collapsed=True):
+            with Container(classes="thoughts-section"):
+                yield Label(f"💭 Thoughts ({len(self.message.thoughts)})", classes="thought-preview")
                 for thought in self.message.thoughts:
-                    yield Label(f"◉ {thought}", classes="thought-line")
+                    yield Label(f"  {thought}", classes="thought-line")
 
         if self.message.tools_used:
             yield Container(
-                *[Label(f"🔧 {tool}", classes="tool-badge") for tool in self.message.tools_used],
+                *[Label(f"⚙ {tool}", classes="tool-badge") for tool in self.message.tools_used],
                 classes="tools-used",
             )
 
         if self.message.is_streaming:
-            yield Label("▌ Streaming...", classes="streaming-indicator")
+            yield Label("▌", classes="streaming-cursor")
 
     def update_content(self, content: str):
         """Update message content (for streaming)"""
-        content_label = self.query_one("#content", Label)
-        content_label.update(content)
+        try:
+            content_label = self.query_one("#content", Label)
+            content_label.update(content)
+        except Exception:
+            pass

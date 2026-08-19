@@ -1,0 +1,12 @@
+2026-08-18 18:29:23,494 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-08-18 18:29:23,494 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("users")
+2026-08-18 18:29:23,494 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-08-18 18:29:23,494 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("sessions")
+2026-08-18 18:29:23,509 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-08-18 18:29:23,513 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("audit_log")
+2026-08-18 18:29:23,513 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-08-18 18:29:23,525 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("plugins")
+2026-08-18 18:29:23,528 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-08-18 18:29:23,528 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("api_keys")
+2026-08-18 18:29:23,528 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-08-18 18:29:23,528 INFO sqlalchemy.engine.Engine COMMIT

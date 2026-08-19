@@ -1,55 +1,61 @@
-/* ELE Agent CLI - Textual CSS */
+/* ELE Agent CLI - Professional AI Theme (Textual CSS only) */
+$primary: #1e88e5;
+$primary-dark: #1565c0;
+$primary-light: #64b5f6;
+$success: #2e7d32;
+$warning: #f57f17;
+$error: #c62828;
+$surface: #ffffff;
+$surface-elevated: #f8f9fa;
+$text: #1a1a2e;
+$text-secondary: #4a4a6a;
+$text-muted: #8a8aa0;
+$border: #e0e4ec;
+$border-focus: #1e88e5;
+$chat-user: #1e88e5;
+$chat-assistant: #f0f4f8;
+$code-bg: #f0f4f8;
 
-$primary: #0066ff;
-$success: #10b981;
-$warning: #f59e0b;
-$error: #ef4444;
-$accent: #8b5cf6;
-$surface: #1e1e2e;
-$text: #cdd6f4;
-$text-muted: #6c7086;
-
-/* Base */
+/* Base - Light Professional Theme */
 Screen {
     background: $surface;
     color: $text;
 }
 
-/* Header */
 Header {
     background: $surface;
     color: $text;
-    border-bottom: solid $primary;
+    border-bottom: solid $border;
     height: 1;
 }
 
 Header:focus {
-    border-bottom: double $primary;
+    border-bottom: solid $primary;
 }
 
-/* Footer */
 Footer {
     background: $surface;
     color: $text-muted;
-    border-top: solid $primary;
+    border-top: solid $border;
     height: 1;
 }
 
 /* Buttons */
 Button {
     background: $surface;
-    color: $text;
+    color: $primary;
     border: solid $primary;
     min-width: 10;
+    height: 3;
 }
 
 Button:hover {
-    background: $primary;
+    background: $primary-light;
     color: $surface;
 }
 
 Button:focus {
-    border: double $primary;
+    border: solid $primary-dark;
 }
 
 Button.-primary {
@@ -58,45 +64,58 @@ Button.-primary {
 }
 
 Button.-primary:hover {
-    background: #0052cc;
+    background: $primary-dark;
 }
 
-Button.-warning {
-    background: $warning;
-    color: $surface;
+Button.-secondary {
+    background: $surface-elevated;
+    color: $text-secondary;
+    border: solid $border;
 }
 
-Button.-error {
-    background: $error;
-    color: $surface;
+Button.-secondary:hover {
+    background: $border;
+    color: $text;
 }
 
-/* Input */
+Button.-ghost {
+    background: transparent;
+    color: $text-secondary;
+    border: none;
+}
+
+Button.-ghost:hover {
+    background: $border;
+    color: $text;
+}
+
+/* Input - SMALLER */
 Input, TextArea {
     background: $surface;
     color: $text;
-    border: solid $primary;
+    border: solid $border;
+    height: 3;
 }
 
 Input:focus, TextArea:focus {
-    border: double $primary;
+    border: solid $border-focus;
 }
 
 /* Select */
 Select {
     background: $surface;
     color: $text;
-    border: solid $primary;
+    border: solid $border;
 }
 
 Select:focus {
-    border: double $primary;
+    border: solid $border-focus;
 }
 
 /* ListView */
 ListView {
     background: $surface;
-    border: solid $primary;
+    border: solid $border;
 }
 
 ListView > .list-view--item {
@@ -105,14 +124,14 @@ ListView > .list-view--item {
 }
 
 ListView > .list-view--item.--highlight {
-    background: $primary;
+    background: $primary-light;
     color: $surface;
 }
 
 /* Tree */
 Tree {
     background: $surface;
-    border: solid $primary;
+    border: solid $border;
 }
 
 Tree > .tree--node {
@@ -120,14 +139,14 @@ Tree > .tree--node {
 }
 
 Tree > .tree--node.--highlight {
-    background: $primary;
+    background: $primary-light;
     color: $surface;
 }
 
 /* Collapsible */
 Collapsible {
     background: $surface;
-    border: solid $primary;
+    border: solid $border;
 }
 
 Collapsible > .collapsible--title {
@@ -162,11 +181,11 @@ TabbedContent {
 
 TabbedContent > .tabbed-content--tab-bar {
     background: $surface;
-    border-bottom: solid $primary;
+    border-bottom: solid $border;
 }
 
 TabbedContent > .tabbed-content--tab-bar > .tabbed-content--tab {
-    color: $text-muted;
+    color: $text-secondary;
 }
 
 TabbedContent > .tabbed-content--tab-bar > .tabbed-content--tab.--active {
@@ -178,7 +197,7 @@ TabbedContent > .tabbed-content--tab-bar > .tabbed-content--tab.--active {
 /* Switch */
 Switch {
     background: $surface;
-    border: solid $primary;
+    border: solid $border;
 }
 
 Switch.--on {
@@ -191,20 +210,20 @@ Switch.--on {
 }
 
 .scrollbar--slider {
-    background: $primary;
+    background: $primary-light;
 }
 
 /* Tooltip */
 .tooltip {
-    background: $surface;
-    border: solid $primary;
+    background: $surface-elevated;
+    border: solid $border;
     color: $text;
 }
 
 /* Notification */
 .notification {
-    background: $surface;
-    border: solid $primary;
+    background: $surface-elevated;
+    border: solid $border;
     color: $text;
 }
 
@@ -223,12 +242,12 @@ Switch.--on {
 /* DataTable */
 DataTable {
     background: $surface;
-    border: solid $primary;
+    border: solid $border;
 }
 
 DataTable > .datatable--header {
-    background: $primary;
-    color: $surface;
+    background: $surface-elevated;
+    color: $text;
 }
 
 DataTable > .datatable--row {
@@ -237,165 +256,200 @@ DataTable > .datatable--row {
 }
 
 DataTable > .datatable--row.--highlight {
-    background: $primary;
+    background: $primary-light;
     color: $surface;
 }
 
 /* Markdown */
 .markdown {
-    color: $primary;
-    text-style: bold;
+    color: $text;
 }
 
 .markdown-pre {
-    background: $surface;
-    border: solid $primary;
+    background: $code-bg;
+    border: solid $border;
     padding: 1;
 }
 
-/* Custom Classes */
-.sidebar {
+/* Chat-specific */
+#messages_container {
     background: $surface;
-    border-right: solid $primary;
+    border: solid $border;
+    margin: 0;
+}
+
+#messages_list {
+    background: $surface;
+}
+
+#input_bar {
+    background: $surface-elevated;
+    border-top: solid $border;
+    padding: 0 2;
+    height: auto;
+    min-height: 4;
+}
+
+#input_area {
+    background: $surface;
+    border: solid $border;
+    height: 3;
+    max-height: 6;
+}
+
+#input_area:focus {
+    border: solid $primary;
+}
+
+#send_btn {
+    background: $primary;
+    color: $surface;
+    border: none;
+    width: 10;
+    height: 3;
+}
+
+#send_btn:hover {
+    background: $primary-dark;
+}
+
+#voice_btn {
+    background: transparent;
+    color: $text-secondary;
+    border: none;
+    width: 5;
+    height: 3;
+}
+
+#voice_btn:hover {
+    background: $border;
+    color: $primary;
+}
+
+#voice_btn.-active {
+    color: $error;
+}
+
+#status_line {
+    color: $text-muted;
+    text-style: dim;
+    height: 1;
+    padding: 0 2;
+    background: $surface;
+    border-bottom: solid $border;
+}
+
+.sidebar {
+    background: $surface-elevated;
+    border-right: solid $border;
+    width: 32;
 }
 
 .sidebar-title {
     text-style: bold;
     color: $primary;
     margin: 1 0;
+    padding: 0 1;
 }
 
-.chat_layout {
-    layout: horizontal;
-    height: 1fr;
-}
-
-.chat_area {
-    width: 1fr;
-    layout: vertical;
-    height: 1fr;
-}
-
-.messages_container {
-    height: 1fr;
-    border: solid $primary;
-    margin: 1;
-}
-
-.input_bar {
-    height: auto;
-    min-height: 5;
-    border-top: solid $primary;
-    padding: 1;
-}
-
-.input_area {
-    width: 1fr;
-    min-height: 3;
-}
-
-.voice_btn, .send_btn {
-    margin-left: 1;
-}
-
-.user-message {
+/* Message bubbles */
+.user-bubble {
     background: $primary;
     color: $surface;
-    margin: 0 20;
+    margin: 1 2;
+    margin-left: 6;
+    padding: 1 2;
+    max-width: 85%;
 }
 
-.assistant-message {
-    background: $surface;
-    border: solid $primary;
+.assistant-bubble {
+    background: #f0f4f8;
+    color: $text;
+    margin: 1 2;
+    margin-right: 6;
+    padding: 1 2;
+    border: solid $border;
+    max-width: 85%;
 }
 
-.message-header {
-    height: auto;
-    margin-bottom: 1;
-}
-
-.message-role {
-    text-style: bold;
-    color: $primary;
-}
-
-.message-time {
+.message-meta {
     color: $text-muted;
     text-style: dim;
+    margin-bottom: 1;
+    height: 1;
 }
 
-.message-content {
-    margin: 1 0;
+.bubble-content {
 }
 
-.thoughts-section {
-    border-left: solid $primary;
-    margin-left: 1;
-    padding-left: 1;
-}
-
-.thought-line {
+.thought-preview {
     color: $text-muted;
+    text-style: italic;
+    margin: 1 0;
+    padding-left: 1;
+    border-left: solid $primary-light;
+    background: #f8f9fa;
+}
+
+.tool-preview {
+    color: $warning;
+    margin: 1 0;
+    padding: 0 1;
+    background: #f8f9fa;
+    border-left: solid $warning;
+}
+
+.streaming-cursor {
+    color: $primary;
+    text-style: bold blink;
 }
 
 .tools-used {
     margin-top: 1;
+    height: auto;
 }
 
 .tool-badge {
-    background: $primary;
-    color: $surface;
+    background: #64b5f6;
+    color: #ffffff;
     padding: 0 1;
     margin-right: 1;
 }
 
-.streaming-indicator {
-    color: $warning;
-    text-style: bold blink;
+.message-time {
+    color: #8a8aa0;
+    text-style: dim;
 }
 
-.setting-group {
-    margin: 1 0;
-    padding: 1;
-    border: solid $primary;
-}
-
-.setting-label {
+.message-role {
     text-style: bold;
-    margin-bottom: 1;
+    color: #1e88e5;
 }
 
-.setting-item {
-    margin: 1 0;
+/* Status badge */
+.status-connected {
+    color: $success;
 }
 
-.plugin-item {
-    margin: 1 0;
+.status-disconnected {
+    color: $error;
+}
+
+/* Thinking panel - expanded */
+.thinking-panel {
+    background: #f8f9fa;
+    border-left: solid $primary-light;
     padding: 1;
-    border: solid $primary;
+    margin: 1 0;
 }
 
-.plugin-enabled {
-    background: $success;
-    color: $text;
+.thinking-line {
+    color: $text-muted;
+    text-style: italic;
+    margin: 0;
 }
 
-.plugin-disabled {
-    background: $error;
-    color: $text;
-}
-
-.tools_sidebar {
-    width: 40;
-    border-right: solid $primary;
-    height: 1fr;
-}
-
-.tools_content {
-    width: 1fr;
-    height: 1fr;
-}
-
-.tool-tab {
-    margin: 1;
+.tool-line {
+    color: $warning;
+    margin: 0;
 }

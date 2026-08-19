@@ -23,6 +23,7 @@ class ProviderName(str, Enum):
     CLAUDE = "claude"
     OLLAMA = "ollama"
     OPENCLAW = "openclaw"
+    DESKTOP = "desktop"
 
 
 class ToolDeclaration(BaseModel):
@@ -43,8 +44,8 @@ class ChatRequest(BaseModel):
     message: str
     interface: str = "web"
     session_id: Optional[str] = None
-    model_preference: ProviderName = ProviderName.AUTO
-    tools_allowed: List[str] = Field(default_factory=lambda: ["file", "browser", "shell"])
+    model_preference: ProviderName = ProviderName.NVIDIA
+    tools_allowed: List[str] = Field(default_factory=lambda: ["file", "shell", "app", "browser", "desktop"])
     stream: bool = False
 
 
@@ -83,17 +84,32 @@ class ToolResultEvent(WSEvent):
     error: Optional[str] = None
 
 
-class ScreenshotEvent(WSEvent):
-    type: Literal["screenshot"] = "screenshot"
-    data: str  # base64
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-
 class ProgressEvent(WSEvent):
     type: Literal["progress"] = "progress"
     current: int
     total: int
     step: str
+
+
+class ScreenshotEvent(WSEvent):
+    type: Literal["screenshot"] = "screenshot"
+    data: str  # base64 encoded
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class OCREvent(WSEvent):
+    type: Literal["ocr"] = "ocr"
+    text: str
+    coordinates: Optional[Dict[str, int]] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DesktopEvent(WSEvent):
+    type: Literal["desktop_action"] = "desktop_action"
+    action: str
+    coordinates: Optional[Dict[str, int]] = None
+    result: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class FinalEvent(WSEvent):
@@ -125,6 +141,6 @@ class PongEvent(WSEvent):
 # Union type for all WS events
 AnyWSEvent = (
     ThoughtEvent | ToolStartEvent | ToolResultEvent |
-    ScreenshotEvent | ProgressEvent | FinalEvent |
+    ScreenshotEvent | OCREvent | DesktopEvent | ProgressEvent | FinalEvent |
     ConfirmationEvent | ErrorEvent | PongEvent
 )
