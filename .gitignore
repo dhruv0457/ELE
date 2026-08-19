@@ -96,3 +96,12 @@ cli/__pycache__/
 *.key
 *.pem
 *.crt
+
+# Next.js build output
+web/.next/
+web/out/
+
+# Log files
+*.log
+backend/*.err
+backend/*.out
