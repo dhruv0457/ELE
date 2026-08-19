@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-ELE Agent — Instant CLI launcher
+ELE Agent — Developer AI Terminal Assistant
 Usage:
-  ele                  Launch the TUI
-  ele chat             Launch directly in chat mode
-  ele backend          Start only the backend server
-  ele setup            Interactive first-time setup
-  ele keys             Show/set API keys
+  ele                  Launch direct interactive terminal REPL (default)
+  ele tui              Launch full-screen TUI interface
+  ele setup            Interactive API key wizard
+  ele keys             Show API key status
+  ele backend          Start backend server
   ele version          Show version
 """
 import sys
@@ -23,7 +23,7 @@ if sys.platform == "win32":
 
 def main():
     args = sys.argv[1:]
-    cmd = args[0].lower() if args else "tui"
+    cmd = args[0].lower() if args else "repl"
 
     if cmd in ("version", "--version", "-v"):
         print("ELE Agent v1.0.0")
@@ -41,23 +41,66 @@ def main():
         _show_keys()
         return
 
+    if cmd in ("agy", "modern", "next", "first"):
+        _launch_agy()
+        return
+
+    if cmd in ("tui", "--tui"):
+        _launch_tui()
+        return
+
     if cmd in ("help", "--help", "-h"):
         print(__doc__.strip())
         return
 
-    # Default: launch TUI
-    _launch_tui()
+    # Default: launch ultra-fast Terminal REPL
+    _launch_repl()
+
+
+def _launch_agy():
+    """Launch the Next-Gen Zero-Latency TUI."""
+    import subprocess
+    agy_script = os.path.join(os.path.dirname(__file__), "cli", "agy.js")
+    if not os.path.isfile(agy_script):
+        agy_script = os.path.join(os.path.dirname(__file__), "..", "first_cli", "app", "agy.js")
+
+    if os.path.isfile(agy_script):
+        try:
+            subprocess.run(["node", agy_script])
+        except FileNotFoundError:
+            print("[ELE] Node.js is required for the modern terminal UI.")
+            print("[ELE] Falling back to default REPL...")
+            _launch_repl()
+    else:
+        print("[ELE] Modern TUI script not found. Launching standard REPL...")
+        _launch_repl()
+
+
+def _launch_repl():
+    """Instant Terminal REPL launch — 0ms container lag."""
+    src_dir = os.path.join(os.path.dirname(__file__), "cli")
+    if os.path.isdir(src_dir):
+        sys.path.insert(0, src_dir)
+
+    try:
+        from src.repl import run_repl
+        run_repl()
+    except ImportError as e:
+        print(f"[ELE] Import error: {e}")
+        print("[ELE] Run: pip install -r cli/requirements.txt")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        pass
 
 
 def _launch_tui():
-    """Instant TUI launch — no delays, no blocking."""
-    # Ensure we're using the project's cli/src directory
-    src_dir = os.path.join(os.path.dirname(__file__), "cli", "src")
+    """Full-screen TUI launch."""
+    src_dir = os.path.join(os.path.dirname(__file__), "cli")
     if os.path.isdir(src_dir):
-        sys.path.insert(0, os.path.dirname(src_dir))
+        sys.path.insert(0, src_dir)
 
     try:
-        from cli.src.app import main as tui_main
+        from src.app import main as tui_main
         tui_main()
     except ImportError as e:
         print(f"[ELE] Import error: {e}")
@@ -103,11 +146,11 @@ def _run_setup():
                 existing[k.strip()] = v.strip()
 
     key_prompts = [
-        ("NVIDIA_API_KEY", "NVIDIA API Key (nvapi-...)", "🚀 Fastest — llama-3.3-70b"),
-        ("OPENAI_API_KEY", "OpenAI API Key (sk-...)", "GPT-4o"),
+        ("NVIDIA_API_KEY", "NVIDIA API Key (nvapi-...)", "🚀 Fastest — llama-3.3-70b (Free at build.nvidia.com)"),
         ("GEMINI_API_KEY", "Gemini API Key (AIza...)", "Gemini 2.0 Flash"),
-        ("ANTHROPIC_API_KEY", "Anthropic API Key (sk-ant-...)", "Claude 3.5"),
-        ("GROQ_API_KEY", "Groq API Key (gsk_...)", "Free & fast"),
+        ("OPENAI_API_KEY", "OpenAI API Key (sk-...)", "GPT-4o / GPT-4o-mini"),
+        ("ANTHROPIC_API_KEY", "Anthropic API Key (sk-ant-...)", "Claude 3.5 Sonnet"),
+        ("GROQ_API_KEY", "Groq API Key (gsk_...)", "Free & ultra fast"),
     ]
 
     print("Enter API keys (press Enter to skip):\n")
@@ -145,8 +188,8 @@ def _show_keys():
     print("\n⚡ ELE Agent — API Keys\n" + "─" * 40)
     for env_key, label in [
         ("NVIDIA_API_KEY", "NVIDIA"),
-        ("OPENAI_API_KEY", "OpenAI"),
         ("GEMINI_API_KEY", "Gemini"),
+        ("OPENAI_API_KEY", "OpenAI"),
         ("ANTHROPIC_API_KEY", "Anthropic"),
         ("GROQ_API_KEY", "Groq"),
     ]:

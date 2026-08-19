@@ -11,8 +11,16 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 import uuid as _uuid
 
-import faiss
-import numpy as np
+try:
+    import faiss
+except ImportError:
+    faiss = None
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
 from contextlib import contextmanager
 
 from app.config.settings import settings
@@ -103,7 +111,9 @@ class LongTermMemory:
         self.index = self._load_index()
         self.metadata: List[Dict[str, Any]] = self._load_metadata()
 
-    def _load_index(self) -> faiss.Index:
+    def _load_index(self):
+        if faiss is None:
+            return None
         index_file = self.index_path / "index.faiss"
         if index_file.exists():
             return faiss.read_index(str(index_file))
@@ -119,13 +129,25 @@ class LongTermMemory:
 
     def _save(self):
         import pickle
-        faiss.write_index(self.index, str(self.index_path / "index.faiss"))
+        if faiss is not None and self.index is not None:
+            faiss.write_index(self.index, str(self.index_path / "index.faiss"))
         with open(self.index_path / "index.pkl", "wb") as f:
             pickle.dump(self.metadata, f)
 
     async def store(self, text: str, tags: List[str] = None, source: str = "user"):
-        embedding = self.embedder.encode([text])[0].astype(np.float32)
+        if faiss is None or np is None or self.index is None:
+            entry_id = len(self.metadata)
+            self.metadata.append({
+                "id": entry_id,
+                "text": text,
+                "tags": tags or [],
+                "source": source,
+                "timestamp": time.time(),
+            })
+            self._save()
+            return
 
+        embedding = self.embedder.encode([text])[0].astype(np.float32)
         entry_id = len(self.metadata)
         self.index.add(np.array([embedding]))
         self.metadata.append({
@@ -140,6 +162,12 @@ class LongTermMemory:
     async def search(self, query: str, k: int = 5, tags: List[str] = None) -> List[Dict[str, Any]]:
         if not self.metadata:
             return []
+
+        if faiss is None or np is None or self.index is None:
+            # Fallback simple keyword match
+            q_lower = query.lower()
+            matches = [m for m in self.metadata if q_lower in m.get("text", "").lower()]
+            return matches[:k]
 
         query_embedding = self.embedder.encode([query])[0].astype(np.float32)
         distances, indices = self.index.search(

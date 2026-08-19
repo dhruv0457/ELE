@@ -15,10 +15,15 @@ class ViewMode(str, Enum):
 
 class AgentStatus(str, Enum):
     IDLE = "idle"
+    LISTENING = "listening"
     THINKING = "thinking"
     WORKING = "working"
     STREAMING = "streaming"
+    SPEAKING = "speaking"
     ERROR = "error"
+
+
+OverlayStatus = AgentStatus
 
 
 @dataclass

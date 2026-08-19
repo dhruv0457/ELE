@@ -5,12 +5,12 @@ import subprocess
 import shlex
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-import structlog
-
-from .browser import BrowserExecutor, BrowserConfig
-from .desktop import DesktopExecutor, DesktopConfig
-
-logger = structlog.get_logger()
+try:
+    import structlog
+    logger = structlog.get_logger()
+except ImportError:
+    import logging
+    logger = logging.getLogger("ele_agent")
 
 
 class FileExecutor:

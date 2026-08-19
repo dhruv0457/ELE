@@ -13,23 +13,21 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let pythonProcess: ChildProcess | null = null
 let pythonPort = 8000
+let isQuitting = false
 
 if (!isDev) {
-  autoUpdater.setFeedURL({
-    provider: 'github',
-    owner: 'ele-agent',
-    repo: 'ele-agent'
-  })
-
-  autoUpdater.checkForUpdatesAndNotify()
-
-  autoUpdater.on('update-available', () => {
-    mainWindow?.webContents.send('update:available')
-  })
-
-  autoUpdater.on('update-downloaded', () => {
-    mainWindow?.webContents.send('update:downloaded')
-  })
+  try {
+    const { autoUpdater: updater } = require('electron-updater')
+    updater?.checkForUpdatesAndNotify?.()
+    updater?.on?.('update-available', () => {
+      mainWindow?.webContents.send('update:available')
+    })
+    updater?.on?.('update-downloaded', () => {
+      mainWindow?.webContents.send('update:downloaded')
+    })
+  } catch {
+    // electron-updater optional
+  }
 }
 
 function createWindow() {
@@ -68,7 +66,7 @@ function createWindow() {
   })
 
   mainWindow.on('close', (e) => {
-    if (!app.isQuitting) {
+    if (!isQuitting) {
       e.preventDefault()
       mainWindow?.hide()
     }
@@ -87,7 +85,7 @@ function createTray() {
     { label: 'Show ELE Agent', click: () => mainWindow?.show() },
     { label: 'Voice Mode', click: () => mainWindow?.webContents.send('voice:toggle') },
     { type: 'separator' },
-    { label: 'Quit', click: () => { app.isQuitting = true; app.quit() } }
+    { label: 'Quit', click: () => { isQuitting = true; app.quit() } }
   ])
 
   tray.setToolTip('ELE Agent')
@@ -155,14 +153,14 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  app.isQuitting = true
+  isQuitting = true
   if (pythonProcess) {
     pythonProcess.kill()
   }
 })
 
 ipcMain.handle('app:quit', () => {
-  app.isQuitting = true
+  isQuitting = true
   app.quit()
 })
 
@@ -202,4 +200,228 @@ ipcMain.handle('updater:check', async () => {
 
 ipcMain.handle('updater:install', async () => {
   autoUpdater.quitAndInstall()
+})
+
+ipcMain.handle('screen:capture', async () => {
+  try {
+    const { desktopCapturer } = require('electron')
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 1920, height: 1080 }
+    })
+    if (sources && sources.length > 0) {
+      return sources[0].thumbnail.toJPEG(80).toString('base64')
+    }
+  } catch (err) {
+    console.error('desktopCapturer error:', err)
+  }
+  return null
+})
+
+// ── Persistent API Keys Bridge (Stored in ~/.ele-agent/.env) ────────────────
+function getEleAgentDir(): string {
+  const dir = join(homedir(), '.ele-agent')
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
+  return dir
+}
+
+function loadAllDiskKeys(): Record<string, string> {
+  const keys: Record<string, string> = {}
+  const envFiles = [
+    join(getEleAgentDir(), '.env'),
+    join(__dirname, '../../../.env'),
+    join(process.cwd(), '.env'),
+  ]
+
+  for (const f of envFiles) {
+    if (existsSync(f)) {
+      try {
+        const { readFileSync } = require('fs')
+        const content = readFileSync(f, 'utf-8')
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim()
+          if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+            const [k, ...rest] = trimmed.split('=')
+            const v = rest.join('=').trim().replace(/^["']|["']$/g, '')
+            if (k.trim() && v) {
+              keys[k.trim()] = v
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Error reading ${f}:`, err)
+      }
+    }
+  }
+
+  // Also check process.env
+  for (const k of ['NVIDIA_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'GROQ_API_KEY']) {
+    if (process.env[k]) {
+      keys[k] = process.env[k]!
+    }
+  }
+
+  return keys
+}
+
+function saveKeyToDisk(keyName: string, keyValue: string): void {
+  const envPath = join(getEleAgentDir(), '.env')
+  let existingLines: string[] = []
+  if (existsSync(envPath)) {
+    try {
+      const { readFileSync } = require('fs')
+      existingLines = readFileSync(envPath, 'utf-8').split('\n')
+    } catch {}
+  }
+
+  let found = false
+  const updatedLines = existingLines.map((line) => {
+    const trimmed = line.trim()
+    if (trimmed.startsWith(`${keyName}=`)) {
+      found = true
+      return `${keyName}=${keyValue}`
+    }
+    return line
+  })
+
+  if (!found) {
+    updatedLines.push(`${keyName}=${keyValue}`)
+  }
+
+  try {
+    writeFileSync(envPath, updatedLines.join('\n').trim() + '\n', 'utf-8')
+  } catch (err) {
+    console.error('Failed to write to .env:', err)
+  }
+}
+
+ipcMain.handle('keys:getAll', async () => {
+  return loadAllDiskKeys()
+})
+
+ipcMain.handle('keys:set', async (_, { provider, key }: { provider: string; key: string }) => {
+  const envKey = `${provider.toUpperCase()}_API_KEY`
+  saveKeyToDisk(envKey, key)
+  process.env[envKey] = key
+  return { success: true, key: envKey }
+})
+
+// ── Persistent Sessions History in JSON & Markdown ───────────────────────────
+function getSessionsDir(): string {
+  const dir = join(getEleAgentDir(), 'sessions')
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
+  return dir
+}
+
+ipcMain.handle('sessions:save', async (_, sessionData: any) => {
+  try {
+    const sessionsDir = getSessionsDir()
+    const id = sessionData.id || `ses_${Date.now()}`
+    const jsonPath = join(sessionsDir, `${id}.json`)
+    const mdPath = join(sessionsDir, `${id}.md`)
+
+    // Save JSON
+    writeFileSync(jsonPath, JSON.stringify(sessionData, null, 2), 'utf-8')
+
+    // Generate readable Markdown
+    let md = `# Session: ${sessionData.name || 'Conversation'}\n`
+    md += `**Date:** ${new Date(sessionData.createdAt || Date.now()).toLocaleString()}\n`
+    md += `**ID:** \`${id}\`\n\n---\n\n`
+
+    if (Array.isArray(sessionData.messages)) {
+      for (const msg of sessionData.messages) {
+        const role = msg.role === 'user' ? '👤 **User**' : msg.role === 'system' ? '⚙ **System**' : '🤖 **ELE (Assistant)**'
+        md += `### ${role}\n*${new Date(msg.timestamp || Date.now()).toLocaleTimeString()}*\n\n${msg.content}\n\n`
+      }
+    }
+
+    writeFileSync(mdPath, md, 'utf-8')
+    return { success: true, jsonPath, mdPath }
+  } catch (err: any) {
+    console.error('Session save error:', err)
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('sessions:list', async () => {
+  try {
+    const sessionsDir = getSessionsDir()
+    const { readdirSync, readFileSync } = require('fs')
+    const files = readdirSync(sessionsDir).filter((f: string) => f.endsWith('.json'))
+    const list: any[] = []
+
+    for (const f of files) {
+      try {
+        const raw = readFileSync(join(sessionsDir, f), 'utf-8')
+        const data = JSON.parse(raw)
+        list.push({
+          id: data.id || f.replace('.json', ''),
+          name: data.name || 'Session',
+          createdAt: data.createdAt || Date.now(),
+          messageCount: data.messages?.length || 0,
+          preview: data.messages?.[data.messages.length - 1]?.content?.slice(0, 80) || '',
+        })
+      } catch {}
+    }
+    return list.sort((a, b) => b.createdAt - a.createdAt)
+  } catch (err: any) {
+    return []
+  }
+})
+
+ipcMain.handle('sessions:load', async (_, id: string) => {
+  try {
+    const sessionsDir = getSessionsDir()
+    const jsonPath = join(sessionsDir, `${id}.json`)
+    if (existsSync(jsonPath)) {
+      const { readFileSync } = require('fs')
+      return JSON.parse(readFileSync(jsonPath, 'utf-8'))
+    }
+    return null
+  } catch (err: any) {
+    console.error('Session load error:', err)
+    return null
+  }
+})
+
+// ── Directory Tree Scanner ───────────────────────────────────────────────────
+function scanDirectory(dir: string, depth = 0, maxDepth = 3): any {
+  if (depth > maxDepth) return null
+  const { readdirSync, statSync } = require('fs')
+  const base = require('path').basename(dir)
+  const ignored = new Set(['node_modules', '.git', '.venv', '__pycache__', '.next', 'dist', 'out', 'build', '.ele-agent'])
+
+  if (ignored.has(base)) return null
+
+  try {
+    const stat = statSync(dir)
+    if (!stat.isDirectory()) {
+      return { name: base, type: 'file', size: stat.size }
+    }
+
+    const children: any[] = []
+    const files = readdirSync(dir)
+    for (const file of files) {
+      if (ignored.has(file)) continue
+      const fullPath = join(dir, file)
+      try {
+        const item = scanDirectory(fullPath, depth + 1, maxDepth)
+        if (item) children.push(item)
+      } catch {}
+    }
+
+    return { name: base, type: 'directory', children }
+  } catch {
+    return null
+  }
+}
+
+ipcMain.handle('system:generateDirectoryTree', async (_, targetPath?: string) => {
+  const root = targetPath || process.cwd()
+  const tree = scanDirectory(root, 0, 3)
+  return { root, tree }
 })

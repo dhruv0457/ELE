@@ -239,7 +239,13 @@ export default function ChatPage() {
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={isLoading ? 'Processing...' : 'Type a message or use voice...'}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleSend(e)
+                    }
+                  }}
+                  placeholder={isLoading ? 'Processing...' : 'Type a message or use voice... [Press Enter to send]'}
                   disabled={isLoading}
                   className="w-full px-4 py-3 pr-12 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none min-h-[52px] max-h-48"
                   rows={1}

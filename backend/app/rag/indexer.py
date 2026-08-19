@@ -5,11 +5,20 @@ import pickle
 import hashlib
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-import asyncio
+try:
+    import faiss
+except ImportError:
+    faiss = None
 
-import faiss
-import numpy as np
-from rank_bm25 import BM25Okapi
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+try:
+    from rank_bm25 import BM25Okapi
+except ImportError:
+    BM25Okapi = None
 
 from app.config.settings import settings
 from app.rag.embedder import get_embedder, FALLBACK_DIM
@@ -56,7 +65,9 @@ class RAGIndexer:
             # Synchronous fallback so non-async callers don't crash.
             asyncio.get_event_loop().run_until_complete(self.initialize())
 
-    def _load_faiss_index(self) -> faiss.Index:
+    def _load_faiss_index(self):
+        if faiss is None:
+            return None
         index_file = self.index_path / "index.faiss"
         if index_file.exists():
             return faiss.read_index(str(index_file))
@@ -70,15 +81,18 @@ class RAGIndexer:
         return []
 
     def _save(self):
-        faiss.write_index(self.index, str(self.index_path / "index.faiss"))
+        if faiss is not None and self.index is not None:
+            faiss.write_index(self.index, str(self.index_path / "index.faiss"))
         with open(self.index_path / "index.pkl", "wb") as f:
             pickle.dump(self.metadata, f)
 
     def _build_bm25(self):
         """Build BM25 index from metadata"""
         self.bm25_corpus = [entry["text"].split() for entry in self.metadata]
-        if self.bm25_corpus:
+        if self.bm25_corpus and BM25Okapi is not None:
             self.bm25 = BM25Okapi(self.bm25_corpus)
+        else:
+            self.bm25 = None
 
     def _chunk_text(self, text: str, max_tokens: int = 512) -> List[str]:
         """Fixed-size chunking"""

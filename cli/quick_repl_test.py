@@ -1,15 +1,21 @@
-"""Quick REPL test"""
+"""Quick test for direct LLM stream"""
 import asyncio
-from src import backend as be
+from src import llm
 
 async def test():
-    print("Backend up:", be.is_backend_up())
-    tok = be.login_or_register()
-    print("Logged in:", tok["email"])
-    print("--- chat ---")
-    async for evt in be.stream_chat("Say hi in one sentence.", tok["access_token"]):
-        if evt.get("type") in ("final", "error"):
-            print(f"{evt['type']}: {evt.get('content', evt.get('message'))[:80]}")
-            break
+    print("Testing direct stream_response with 'hi'...")
+    full = ""
+    async for evt in llm.stream_response([{"role": "user", "content": "hi"}], provider="auto"):
+        if evt.type == "model_info":
+            print(f"Model: {evt.model}")
+        elif evt.type == "delta":
+            print(evt.content, end="", flush=True)
+            full += evt.content
+        elif evt.type == "error":
+            print(f"\n[ERROR] {evt.content}")
+        elif evt.type == "final":
+            print(f"\n[FINAL] (len={len(evt.content)})")
+    print(f"\nDone! Received {len(full)} chars.")
 
-asyncio.run(test())
+if __name__ == "__main__":
+    asyncio.run(test())

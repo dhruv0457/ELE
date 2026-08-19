@@ -1,11 +1,25 @@
-"""Configuration Management with Pydantic + TOML"""
 import os
-import tomli
-import tomli_w
+try:
+    import tomllib as tomli
+except ImportError:
+    try:
+        import tomli
+    except ImportError:
+        tomli = None
+
+try:
+    import tomli_w
+except ImportError:
+    tomli_w = None
 from pathlib import Path
 from typing import Any, Optional, Dict, List
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, BaseModel
+
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+except ImportError:
+    BaseSettings = BaseModel
+    SettingsConfigDict = dict
 
 
 class LLMProviderConfig(BaseSettings):
@@ -327,7 +341,7 @@ class Settings(BaseSettings):
 
     def _load_toml_config(self) -> Dict[str, Any]:
         config_path = self._get_config_path()
-        if config_path.exists():
+        if config_path.exists() and tomli is not None:
             try:
                 with open(config_path, "rb") as f:
                     return tomli.load(f)
@@ -342,6 +356,8 @@ class Settings(BaseSettings):
 
     def save_toml(self):
         """Save current config to TOML file"""
+        if tomli_w is None:
+            return
         config_path = self._get_config_path()
         config_path.parent.mkdir(parents=True, exist_ok=True)
         data = self.model_dump(exclude_none=True)

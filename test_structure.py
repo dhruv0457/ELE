@@ -8,6 +8,13 @@ project_root = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(project_root, "backend"))
 sys.path.insert(0, project_root)
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 def test_backend():
     """Test backend imports"""

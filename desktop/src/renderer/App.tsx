@@ -13,21 +13,21 @@ type View = 'chat' | 'dashboard' | 'plugins' | 'marketplace' | 'settings'
 function Dashboard() {
   return (
     <div className="flex-1 p-6 overflow-auto">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Dashboard</h1>
+      <h1 className="text-2xl font-bold text-gray-100 mb-6">System Dashboard</h1>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: 'Total Messages', value: '1,234', icon: '🤖', color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' },
-          { label: 'Tasks Completed', value: '567', icon: '✅', color: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' },
-          { label: 'Active Sessions', value: '23', icon: '📊', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' },
-          { label: 'Avg Response', value: '1.2s', icon: '⚡', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' },
+          { label: 'Total Messages', value: '1,234', icon: '⚡', color: 'bg-cyan-900/30 text-cyan-400 border border-cyan-500/30' },
+          { label: 'Tasks Completed', value: '567', icon: '✓', color: 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30' },
+          { label: 'Active Sessions', value: '12', icon: '📊', color: 'bg-purple-900/30 text-purple-400 border border-purple-500/30' },
+          { label: 'Avg Latency', value: '< 1s', icon: '⚡', color: 'bg-orange-900/30 text-orange-400 border border-orange-500/30' },
         ].map((stat, i) => (
           <div key={i} className="card p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
-                <p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1">{stat.value}</p>
+                <p className="text-sm text-gray-400">{stat.label}</p>
+                <p className="text-3xl font-bold text-gray-100 mt-1 font-mono">{stat.value}</p>
               </div>
-              <div className={`p-3 rounded-xl ${stat.color}`}>{stat.icon}</div>
+              <div className={`p-3 rounded-2xl ${stat.color} font-mono text-lg`}>{stat.icon}</div>
             </div>
           </div>
         ))}
@@ -37,7 +37,7 @@ function Dashboard() {
 }
 
 export function App() {
-  const { currentView, setCurrentView, isOverlayVisible, overlayStatus } = useStore()
+  const { currentView, setCurrentView, isOverlayVisible, overlayStatus, theme } = useStore()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -61,13 +61,13 @@ export function App() {
     }
   }, [])
 
-  if (!mounted) return <div className="loading">Loading...</div>
+  if (!mounted) return <div className="loading text-white bg-gray-950 flex items-center justify-center h-screen">Loading ELE Agent...</div>
 
   return (
-    <div className="app h-screen w-screen flex bg-gray-50 dark:bg-gray-900">
+    <div className={`app h-screen w-screen flex overflow-hidden theme-${theme} bg-[var(--bg-primary)] text-[var(--text-primary)]`}>
       <Sidebar currentView={currentView} onViewChange={setCurrentView} />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden bg-[var(--bg-primary)]">
         {currentView === 'chat' && <ChatWindow />}
         {currentView === 'dashboard' && <Dashboard />}
         {currentView === 'plugins' && <PluginManager />}

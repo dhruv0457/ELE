@@ -214,131 +214,213 @@ class StreamEvent:
     model: str = ""
 
 
+async def _stream_openai_compatible(
+    provider_name: str,
+    base_url: str,
+    api_key: str,
+    messages: List[Dict],
+    model: str,
+    system: str
+) -> AsyncGenerator[StreamEvent, None]:
+    """Universal SSE streaming for OpenAI-compatible providers (NVIDIA, OpenAI, Groq, etc.)."""
+    try:
+        import httpx
+        normalized_model = normalize_model(provider_name.lower(), model)
+        msgs = [{"role": "system", "content": system}] + messages
+        yield StreamEvent("model_info", model=f"{provider_name} · {normalized_model.split('/')[-1]}")
+
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": normalized_model,
+            "messages": msgs,
+            "stream": True,
+            "temperature": 0.7,
+            "max_tokens": 4096,
+        }
+
+        full = ""
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", url, headers=headers, json=payload) as response:
+                if response.status_code != 200:
+                    err_bytes = await response.aread()
+                    err_text = err_bytes.decode("utf-8", errors="replace")
+                    try:
+                        err_json = json.loads(err_text)
+                        err_text = err_json.get("error", {}).get("message", err_text)
+                    except Exception:
+                        pass
+                    yield StreamEvent("error", content=f"{provider_name} API Error ({response.status_code}): {err_text}")
+                    return
+
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("data:"):
+                        data_str = line[5:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            choices = data.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {}).get("content", "")
+                                if delta:
+                                    full += delta
+                                    yield StreamEvent("delta", content=delta)
+                        except Exception:
+                            continue
+        yield StreamEvent("final", content=full)
+    except Exception as e:
+        yield StreamEvent("error", content=f"{provider_name} Connection Error: {e}")
+
+
 async def _stream_nvidia(
     messages: List[Dict], model: str, system: str
 ) -> AsyncGenerator[StreamEvent, None]:
-    try:
-        import openai
-        normalized_model = normalize_model("nvidia", model)
-        client = openai.AsyncOpenAI(
-            api_key=_KEYS["NVIDIA_API_KEY"],
-            base_url=_KEYS.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-        )
-        msgs = [{"role": "system", "content": system}] + messages
-        yield StreamEvent("model_info", model=f"NVIDIA · {normalized_model.split('/')[-1]}")
-        stream = await client.chat.completions.create(
-            model=normalized_model, messages=msgs, stream=True, temperature=0.7, max_tokens=4096
-        )
-        full = ""
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content or ""
-            if delta:
-                full += delta
-                yield StreamEvent("delta", content=delta)
-        yield StreamEvent("final", content=full)
-    except Exception as e:
-        err_msg = str(e)
-        if "404" in err_msg:
-            err_msg = (
-                f"NVIDIA 404 (Model '{model}' not found on endpoint). "
-                "Defaulting to `meta/llama-3.3-70b-instruct`."
-            )
-        yield StreamEvent("error", content=f"NVIDIA API: {err_msg}")
+    base_url = _KEYS.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    api_key = _KEYS.get("NVIDIA_API_KEY", "")
+    async for ev in _stream_openai_compatible("NVIDIA", base_url, api_key, messages, model, system):
+        yield ev
+
+
+async def _stream_openai(
+    messages: List[Dict], model: str, system: str
+) -> AsyncGenerator[StreamEvent, None]:
+    api_key = _KEYS.get("OPENAI_API_KEY", "")
+    async for ev in _stream_openai_compatible("OpenAI", "https://api.openai.com/v1", api_key, messages, model, system):
+        yield ev
+
+
+async def _stream_groq(
+    messages: List[Dict], model: str, system: str
+) -> AsyncGenerator[StreamEvent, None]:
+    api_key = _KEYS.get("GROQ_API_KEY", "")
+    async for ev in _stream_openai_compatible("Groq", "https://api.groq.com/openai/v1", api_key, messages, model, system):
+        yield ev
 
 
 async def _stream_gemini(
     messages: List[Dict], model: str, system: str
 ) -> AsyncGenerator[StreamEvent, None]:
     try:
-        import google.generativeai as genai
+        import httpx
         normalized_model = normalize_model("gemini", model)
-        genai.configure(api_key=_KEYS["GEMINI_API_KEY"])
-        gm = genai.GenerativeModel(normalized_model, system_instruction=system)
-        # Convert messages to Gemini format
-        history = []
-        for m in messages[:-1]:
-            history.append({
-                "role": "user" if m["role"] == "user" else "model",
-                "parts": [m["content"]]
-            })
-        last_msg = messages[-1]["content"] if messages else ""
+        api_key = _KEYS.get("GEMINI_API_KEY", "")
         yield StreamEvent("model_info", model=f"Gemini · {normalized_model}")
-        chat = gm.start_chat(history=history)
+
+        # Build contents
+        contents = []
+        for m in messages:
+            role = "user" if m.get("role") == "user" else "model"
+            contents.append({
+                "role": role,
+                "parts": [{"text": m.get("content", "")}]
+            })
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{normalized_model}:streamGenerateContent?alt=sse&key={api_key}"
+        payload = {
+            "contents": contents,
+            "systemInstruction": {
+                "parts": [{"text": system}]
+            },
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 4096,
+            }
+        }
+
         full = ""
-        async for chunk in await chat.send_message_async(last_msg, stream=True):
-            if chunk.text:
-                full += chunk.text
-                yield StreamEvent("delta", content=chunk.text)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", url, json=payload) as response:
+                if response.status_code != 200:
+                    err_bytes = await response.aread()
+                    yield StreamEvent("error", content=f"Gemini API Error ({response.status_code}): {err_bytes.decode('utf-8', errors='replace')}")
+                    return
+
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("data:"):
+                        data_str = line[5:].strip()
+                        try:
+                            data = json.loads(data_str)
+                            candidates = data.get("candidates", [])
+                            if candidates:
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                for p in parts:
+                                    text = p.get("text", "")
+                                    if text:
+                                        full += text
+                                        yield StreamEvent("delta", content=text)
+                        except Exception:
+                            continue
         yield StreamEvent("final", content=full)
     except Exception as e:
-        yield StreamEvent("error", content=f"Gemini API error: {e}")
-
-
-async def _stream_openai(
-    messages: List[Dict], model: str, system: str
-) -> AsyncGenerator[StreamEvent, None]:
-    try:
-        import openai
-        normalized_model = normalize_model("openai", model)
-        client = openai.AsyncOpenAI(api_key=_KEYS["OPENAI_API_KEY"])
-        msgs = [{"role": "system", "content": system}] + messages
-        yield StreamEvent("model_info", model=f"OpenAI · {normalized_model}")
-        stream = await client.chat.completions.create(
-            model=normalized_model, messages=msgs, stream=True, temperature=0.7, max_tokens=4096
-        )
-        full = ""
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content or ""
-            if delta:
-                full += delta
-                yield StreamEvent("delta", content=delta)
-        yield StreamEvent("final", content=full)
-    except Exception as e:
-        yield StreamEvent("error", content=f"OpenAI API error: {e}")
+        yield StreamEvent("error", content=f"Gemini Connection Error: {e}")
 
 
 async def _stream_anthropic(
     messages: List[Dict], model: str, system: str
 ) -> AsyncGenerator[StreamEvent, None]:
     try:
-        import anthropic
+        import httpx
         normalized_model = normalize_model("anthropic", model)
-        client = anthropic.AsyncAnthropic(api_key=_KEYS["ANTHROPIC_API_KEY"])
-        yield StreamEvent("model_info", model=f"Claude · {normalized_model.split('-')[1] if '-' in normalized_model else normalized_model}")
+        api_key = _KEYS.get("ANTHROPIC_API_KEY", "")
+        yield StreamEvent("model_info", model=f"Claude · {normalized_model}")
+
+        # Anthropic only allows user/assistant in messages
+        filtered_msgs = []
+        for m in messages:
+            if m.get("role") in ("user", "assistant"):
+                filtered_msgs.append({"role": m["role"], "content": m["content"]})
+
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        payload = {
+            "model": normalized_model,
+            "system": system,
+            "messages": filtered_msgs,
+            "max_tokens": 4096,
+            "stream": True,
+        }
+
         full = ""
-        async with client.messages.stream(
-            model=normalized_model, messages=messages, system=system,
-            max_tokens=4096, temperature=0.7
-        ) as stream:
-            async for text in stream.text_stream:
-                full += text
-                yield StreamEvent("delta", content=text)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", url, headers=headers, json=payload) as response:
+                if response.status_code != 200:
+                    err_bytes = await response.aread()
+                    yield StreamEvent("error", content=f"Anthropic API Error ({response.status_code}): {err_bytes.decode('utf-8', errors='replace')}")
+                    return
+
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("data:"):
+                        data_str = line[5:].strip()
+                        try:
+                            data = json.loads(data_str)
+                            ev_type = data.get("type")
+                            if ev_type == "content_block_delta":
+                                delta = data.get("delta", {}).get("text", "")
+                                if delta:
+                                    full += delta
+                                    yield StreamEvent("delta", content=delta)
+                        except Exception:
+                            continue
         yield StreamEvent("final", content=full)
     except Exception as e:
-        yield StreamEvent("error", content=f"Anthropic API error: {e}")
-
-
-async def _stream_groq(
-    messages: List[Dict], model: str, system: str
-) -> AsyncGenerator[StreamEvent, None]:
-    try:
-        from groq import AsyncGroq
-        normalized_model = normalize_model("groq", model)
-        client = AsyncGroq(api_key=_KEYS["GROQ_API_KEY"])
-        msgs = [{"role": "system", "content": system}] + messages
-        yield StreamEvent("model_info", model=f"Groq · {normalized_model}")
-        stream = await client.chat.completions.create(
-            model=normalized_model, messages=msgs, stream=True, temperature=0.7, max_tokens=4096
-        )
-        full = ""
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content or ""
-            if delta:
-                full += delta
-                yield StreamEvent("delta", content=delta)
-        yield StreamEvent("final", content=full)
-    except Exception as e:
-        yield StreamEvent("error", content=f"Groq API error: {e}")
+        yield StreamEvent("error", content=f"Anthropic Connection Error: {e}")
 
 
 async def _stream_ollama(
