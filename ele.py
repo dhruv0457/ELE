@@ -23,10 +23,10 @@ if sys.platform == "win32":
 
 def main():
     args = sys.argv[1:]
-    cmd = args[0].lower() if args else "repl"
+    cmd = args[0].lower() if args else ""
 
     if cmd in ("version", "--version", "-v"):
-        print("ELE Agent v1.0.0")
+        print("ELE Agent v1.0.0 — AI Autonomous Developer & OS Copilot")
         return
 
     if cmd in ("setup", "init"):
@@ -41,8 +41,8 @@ def main():
         _show_keys()
         return
 
-    if cmd in ("agy", "modern", "next", "first"):
-        _launch_agy()
+    if cmd in ("repl", "--repl"):
+        _launch_repl()
         return
 
     if cmd in ("tui", "--tui"):
@@ -53,12 +53,12 @@ def main():
         print(__doc__.strip())
         return
 
-    # Default: launch ultra-fast Terminal REPL
-    _launch_repl()
+    # Default: launch modern High-FPS Visual AI Agent (agy.js)
+    _launch_agy(args)
 
 
-def _launch_agy():
-    """Launch the Next-Gen Zero-Latency TUI."""
+def _launch_agy(pass_args=None):
+    """Launch the Next-Gen Zero-Latency TUI & Automation Copilot."""
     import subprocess
     agy_script = os.path.join(os.path.dirname(__file__), "cli", "agy.js")
     if not os.path.isfile(agy_script):
@@ -66,10 +66,13 @@ def _launch_agy():
 
     if os.path.isfile(agy_script):
         try:
-            subprocess.run(["node", agy_script])
+            cmd = ["node", agy_script]
+            if pass_args:
+                cmd.extend(pass_args)
+            subprocess.run(cmd)
         except FileNotFoundError:
             print("[ELE] Node.js is required for the modern terminal UI.")
-            print("[ELE] Falling back to default REPL...")
+            print("[ELE] Falling back to standard REPL...")
             _launch_repl()
     else:
         print("[ELE] Modern TUI script not found. Launching standard REPL...")

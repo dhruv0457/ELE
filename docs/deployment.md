@@ -1,165 +1,99 @@
-# ELE Agent Deployment Guide
+# 🚀 ELE Agent Production Deployment Guide
 
-## Prerequisites
-
-- GitHub account (for CI/CD and releases)
-- Oracle Cloud Free Tier account
-- Cloudflare account (Pages + DNS)
-- Supabase account
-- Telegram Bot (via @BotFather)
+This guide details how to deploy **ELE Agent** in a production environment with maximum security, high availability, monitoring, and automated scaling.
 
 ---
 
-## 1. Supabase Setup
+## 🏗️ Architecture Overview
 
-### Create Project
-1. Go to https://supabase.com → New Project
-2. Choose free tier, set region close to Oracle (e.g., `us-east-1`)
-3. Save: **Project URL**, **Anon Key**, **Service Role Key**
-
-### Database Schema
-Run in Supabase SQL Editor:
-```sql
--- Users (extends auth.users)
-create table public.profiles (
-  id uuid references auth.users on delete cascade primary key,
-  email text,
-  tier text default 'free',  -- free, pro, team
-  api_key_hash text,         -- platform API key hash
-  credits_remaining integer default 100,
-  credits_reset_at timestamptz default now(),
-  telegram_id bigint unique, -- for whitelist
-  settings jsonb default '{}',
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
--- Sessions
-create table public.sessions (
-  id uuid default gen_random_uuid() primary key,
-  user_id uuid references public.profiles(id) on delete cascade,
-  title text,
-  messages jsonb default '[]',
-  metadata jsonb default '{}',
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
--- Audit Log (append-only)
-create table public.audit_log (
-  id bigserial primary key,
-  user_id uuid references public.profiles(id) on delete set null,
-  action text not null,
-  details jsonb,
-  ip_address inet,
-  created_at timestamptz default now()
-);
-
--- Plugins
-create table public.plugins (
-  id uuid default gen_random_uuid() primary key,
-  name text not null,
-  version text not null,
-  manifest jsonb not null,
-  author_id uuid references public.profiles(id),
-  rating numeric(3,2) default 0,
-  downloads integer default 0,
-  is_approved boolean default false,
-  created_at timestamptz default now()
-);
-
--- RLS Policies
-alter table public.profiles enable row level security;
-alter table public.sessions enable row level security;
-alter table public.audit_log enable row level security;
-
-create policy "Users see own profile" on public.profiles
-  for select using (auth.uid() = id);
-
-create policy "Users manage own sessions" on public.sessions
-  for all using (auth.uid() = user_id);
-
-create policy "Users see own audit" on public.audit_log
-  for select using (auth.uid() = user_id);
-```
-
-### Auth Providers
-Enable in Supabase Auth:
-- Email (magic link)
-- Google OAuth (add credentials)
+ELE Agent production deployment consists of:
+1. **AI Agent Backend (FastAPI + Uvicorn)**: Asynchronous REST and WebSocket API running on port `8000`.
+2. **Web Dashboard (Next.js + Nginx)**: High-performance web frontend running on port `3000` (or `80`/`443`).
+3. **Database**: Persistent SQLite (single-instance) or PostgreSQL (multi-tenant/distributed cluster).
+4. **Cache & Broker (Optional)**: Redis 7 for high-speed rate-limiting and asynchronous task distribution.
+5. **AI Inference Mesh**: Direct integrations with NVIDIA NIM, Google Gemini, OpenAI, Groq, Anthropic, and local Ollama.
 
 ---
 
-## 2. Oracle Cloud Free Tier
+## 📦 Option 1: Docker Compose (Recommended)
 
-### Create Instance
-1. Oracle Cloud → Compute → Instances → Create Instance
-2. Shape: `VM.Standard.A1.Flex` (4 OCPU, 24GB RAM - ARM)
-3. Image: Canonical Ubuntu 22.04
-4. SSH Keys: Add your public key
-5. Network: Allow ports 22, 80, 443, 8000
+### 1. Prerequisites
+- Docker Engine `>= 24.0`
+- Docker Compose v2 `>= 2.20`
+- Minimum 2 CPU cores, 4 GB RAM
 
-### Server Setup
+### 2. Setup Environment
+Clone the repository and prepare your environment variables:
 ```bash
-# Connect
-ssh ubuntu@<public_ip>
-
-# Install dependencies
-sudo apt update && sudo apt install -y \
-  python3.11 python3.11-venv python3.11-dev \
-  nodejs npm postgresql-client redis-tools \
-  nginx certbot python3-certbot-nginx \
-  git curl wget unzip rustc cargo
-
-# Python virtual env
-python3.11 -m venv /opt/ele-venv
-source /opt/ele-venv/bin/activate
-pip install --upgrade pip
-
-# Clone repo
-cd /opt
-git clone https://github.com/yourusername/ele-agent.git
-cd ele-agent/backend
-pip install -r requirements.txt
-
-# Environment
+git clone https://github.com/your-org/ele.git
+cd ele
 cp .env.example .env
-# Edit .env with your keys
 ```
 
-### Systemd Service
+Edit `.env` and provide your production credentials:
 ```ini
-# /etc/systemd/system/ele-api.service
-[Unit]
-Description=ELE Agent API
-After=network.target
-
-[Service]
-Type=exec
-User=ubuntu
-WorkingDirectory=/opt/ele-agent/backend
-Environment=PATH=/opt/ele-venv/bin
-ExecStart=/opt/ele-venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
+APP_ENV=production
+DEBUG=false
+JWT_SECRET_KEY=use_a_secure_random_64_character_string
+NVIDIA_API_KEY=your_nvidia_nim_api_key
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
+### 3. Deploy
+Launch the complete container stack:
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now ele-api
+# Linux / macOS
+./scripts/deploy.sh
+
+# Windows PowerShell
+.\scripts\deploy.ps1
+
+# Or standard Docker Compose command
+docker compose up -d --build
 ```
 
-### Nginx Reverse Proxy
+### 4. Verify Health
+```bash
+curl -f http://localhost:8000/health
+```
+
+---
+
+## 🌐 Option 2: Nginx Reverse Proxy with SSL (HTTPS)
+
+For domain deployment (e.g. `https://ele.yourdomain.com`), use Nginx with Let's Encrypt SSL.
+
+### Sample Nginx Server Block:
 ```nginx
-# /etc/nginx/sites-available/ele
 server {
     listen 80;
-    server_name api.yourdomain.com;
+    server_name ele.yourdomain.com;
+    return 301 https://$host$request_uri;
+}
 
+server {
+    listen 443 ssl http2;
+    server_name ele.yourdomain.com;
+
+    ssl_certificate /etc/letsencrypt/live/ele.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/ele.yourdomain.com/privkey.pem;
+
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Frontend Dashboard
     location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Backend API & WebSocket Streaming
+    location /api/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -168,264 +102,39 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
     }
 }
 ```
 
-```bash
-sudo ln -s /etc/nginx/sites-available/ele /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d api.yourdomain.com
-```
+---
 
-### Oracle Functions (Telegram Webhook)
-```bash
-# Install Fn CLI
-curl -LSs https://raw.githubusercontent.com/fnproject/cli/master/install | sh
+## ☁️ Option 3: Cloud Container Platforms
 
-# Deploy webhook function
-cd /opt/ele-agent/backend
-fn deploy --app ele --local
+### AWS ECS / Fargate
+1. Push images to Amazon ECR (`docker tag ele-backend:latest <account>.dkr.ecr.<region>.amazonaws.com/ele-backend:latest`).
+2. Create ECS Task Definition specifying `backend` and `web` containers.
+3. Configure AWS Application Load Balancer (ALB) targeting container ports.
+
+### GCP Cloud Run
+Deploy backend as a scalable service:
+```bash
+gcloud run deploy ele-backend \
+  --image gcr.io/your-project/ele-backend:latest \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars APP_ENV=production,DEBUG=false
 ```
 
 ---
 
-## 3. Cloudflare Pages (Web Frontend)
+## 🛠️ Management & Monitoring
 
-### Connect Repository
-1. Cloudflare Dashboard → Pages → Create a project
-2. Connect to GitHub → Select `ele-agent` repo
-3. Build settings:
-   - **Framework**: Next.js
-   - **Build command**: `cd web && npm run build`
-   - **Output directory**: `web/out`
-   - **Root directory**: `/`
-4. Environment variables:
-   ```
-   NEXT_PUBLIC_API_URL=https://api.yourdomain.com
-   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-   ```
-
-### Custom Domain
-1. Pages → Custom domains → Add `app.yourdomain.com`
-2. DNS: CNAME `app` → `<project>.pages.dev`
-
----
-
-## 4. GitHub Actions CI/CD
-
-### Secrets (Repository → Settings → Secrets)
-```
-SUPABASE_URL
-SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
-ORACLE_SSH_KEY
-ORACLE_HOST
-ORACLE_USER
-TELEGRAM_BOT_TOKEN
-TELEGRAM_WEBHOOK_SECRET
-```
-
-### Workflows
-
-#### CI (`.github/workflows/ci.yml`)
-```yaml
-name: CI
-on: [push, pull_request]
-jobs:
-  backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.11'}
-      - run: cd backend && pip install -r requirements.txt && pip install -r requirements-dev.txt
-      - run: cd backend && python -m pytest tests/ -v
-      - run: cd backend && python -m ruff check .
-      - run: cd backend && python -m mypy .
-  
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: '20'}
-      - run: cd web && npm ci && npm run build && npm run lint
-  
-  desktop:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: '20'}
-      - run: cd desktop && npm ci && npm run build
-```
-
-#### Deploy (`.github/workflows/deploy.yml`)
-```yaml
-name: Deploy
-on:
-  release:
-    types: [published]
-jobs:
-  backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Oracle
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.ORACLE_HOST }}
-          username: ${{ secrets.ORACLE_USER }}
-          key: ${{ secrets.ORACLE_SSH_KEY }}
-          script: |
-            cd /opt/ele-agent
-            git pull
-            cd backend
-            /opt/ele-venv/bin/pip install -r requirements.txt
-            sudo systemctl restart ele-api
-  
-  desktop:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: '20'}
-      - run: cd desktop && npm ci && npm run build && npm run package
-      - uses: softprops/action-gh-release@v1
-        with:
-          files: desktop/dist/*.exe
-```
-
----
-
-## 5. Telegram Bot
-
-### Create Bot
-1. Message @BotFather → `/newbot`
-2. Name: `ELE Agent`, Username: `your_ele_bot`
-3. Save **Bot Token**
-
-### Set Webhook
-```bash
-curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://api.yourdomain.com/api/v1/telegram/webhook", "secret_token": "<WEBHOOK_SECRET>"}'
-```
-
-### Configure Whitelist
-In Supabase `profiles` table, set `telegram_id` for authorized users.
-
----
-
-## 6. Desktop App Distribution
-
-### Code Signing (Optional but Recommended)
-```bash
-# Windows - self-signed for testing
-New-SelfSignedCertificate -Type CodeSigning -Subject "CN=ELE Agent" -CertStoreLocation "Cert:\CurrentUser\My" -KeyUsage DigitalSignature -FriendlyName "ELE Agent"
-```
-
-### electron-builder Config (`desktop/build/config.js`)
-```js
-module.exports = {
-  appId: 'com.ele.agent',
-  productName: 'ELE Agent',
-  copyright: 'MIT License',
-  directories: { output: 'dist' },
-  files: ['src/**/*', 'package.json', '!**/node_modules/**/*'],
-  win: {
-    target: ['nsis', 'portable'],
-    icon: 'build/icon.ico',
-    signtoolOptions: { certificateFile: 'cert.p12', certificatePassword: process.env.CERT_PASSWORD }
-  },
-  nsis: {
-    oneClick: false,
-    allowToChangeInstallationDirectory: true,
-    createDesktopShortcut: true,
-    createStartMenuShortcut: true
-  },
-  publish: {
-    provider: 'github',
-    owner: 'yourusername',
-    repo: 'ele-agent'
-  }
-}
-```
-
----
-
-## 7. Local Development
-
-### Backend
-```bash
-cd backend
-cp .env.example .env
-# Edit .env
-source ../.venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-### Web
-```bash
-cd web
-npm install
-npm run dev
-# http://localhost:3000
-```
-
-### Desktop
-```bash
-cd desktop
-npm install
-npm run dev
-```
-
-### CLI
-```bash
-cd cli
-pip install -e .
-ele --help
-```
-
----
-
-## 8. Monitoring & Logs
-
-### Log Locations
-- **Backend**: `journalctl -u ele-api -f`
-- **Nginx**: `/var/log/nginx/access.log`, `/var/log/nginx/error.log`
-- **Application**: Structured JSON logs to stdout (captured by systemd)
-
-### Health Checks
-- `GET /health` → `{status: "ok", version: "1.0.0", uptime: 3600}`
-- `GET /health/ready` → Checks DB, Redis, LLM connectivity
-
-### Sentry (Optional)
-```python
-# backend/app/main.py
-import sentry_sdk
-sentry_sdk.init(dsn=os.getenv("SENTRY_DSN"), traces_sample_rate=0.1)
-```
-
----
-
-## 9. Backup & Recovery
-
-### Supabase
-- Automatic daily backups (7-day retention on free tier)
-- Manual: `pg_dump` via Supabase CLI
-
-### Application Data
-- Local user data: `~/.ele-agent/` (user responsibility)
-- Plugin data: `~/.ele-agent/plugins/`
-
-### Disaster Recovery
-1. Redeploy backend from GitHub
-2. Restore Supabase from backup
-3. Update DNS if needed
-4. Users re-authenticate (sessions preserved in Supabase)
+| Action | Command |
+| :--- | :--- |
+| **Check service status** | `docker compose ps` |
+| **View live logs** | `docker compose logs -f` |
+| **Restart backend** | `docker compose restart backend` |
+| **Update to latest code** | `git pull && docker compose up -d --build` |
+| **Check health endpoint** | `curl -i http://localhost:8000/health` |
+| **Run diagnostics** | `python scripts/verify-production.py` |

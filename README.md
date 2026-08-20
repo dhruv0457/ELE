@@ -1,108 +1,132 @@
-# ELE Agent - Unified AI Desktop Assistant
+<div align="center">
 
-A production-ready AI assistant that runs locally with a beautiful terminal interface (TUI) and supports multiple interfaces (CLI, Web, Desktop).
+# ⚡ ELE AGENT
 
-## Features
+**The Autonomous AI Developer & Desktop OS Copilot**
 
-- **Terminal Chat (TUI)** - Professional text-based interface with live streaming
-- **Multi-LLM Support** - NVIDIA, OpenAI, Anthropic, Google Gemini, Groq, Ollama
-- **Automation Tools** - File operations, shell commands, app launching
-- **Memory** - 4-layer system (short-term, FAISS vector, episodic, project)
-- **RAG** - FAISS + BM25 hybrid search
-- **Plugins** - Python, JSON, WASM support
-- **Themes** - 10+ built-in themes
-- **Vim-style keys** - Space leader keybindings
+[![CI Status](https://img.shields.io/github/actions/workflow/status/dhruv/ele/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/dhruv/ele/actions)
+[![Docker Image](https://img.shields.io/badge/Docker-Production%20Ready-blue?logo=docker&style=flat-square)](https://github.com/dhruv/ele/pkgs/container/backend)
+[![Python Version](https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&style=flat-square)](https://www.python.org/)
+[![Node Version](https://img.shields.io/badge/Node.js-18%2B%20%7C%2020%2B-339933?logo=node.js&style=flat-square)](https://nodejs.org/)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI%20%2B%20LangGraph-009688?logo=fastapi&style=flat-square)](https://fastapi.tiangolo.com/)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-## Quick Start
+*Direct PC Control • Speech-to-Speech Jarvis • 102+ NVIDIA NIM & Multi-Cloud Models • Visual AI Cursor Animation*
 
-### One-Command Install (Windows)
+</div>
 
-```powershell
-# Run in PowerShell as Administrator
-irm https://raw.githubusercontent.com/your-username/ele-agent/main/install.py | python
-```
+---
 
-Then restart terminal and run:
-```powershell
+## 🌟 Key Capabilities
+
+- **🎙️ Speech-to-Speech Jarvis Mode**: Voice assistant with real-time speech recognition, noise suppression, and neural voice synthesis (`en-GB-RyanNeural`).
+- **🖥️ Full PC Automation & Ghost Cursor**: Visual AI cursor glide and click ripple across Windows applications (Office 365, Word, Excel, PowerPoint, VS Code, Chrome, Spotify, Telegram, and Settings).
+- **🔀 102+ Model Catalog**: Interactive model selector (`/model`) with instant category filtering across NVIDIA NIM, Google Gemini, Groq Cloud (800 tok/s), OpenAI, Anthropic, and local air-gapped Ollama.
+- **⚡ Prompt Queueing & Sticky Tasks (`/todo`)**: Queue commands while agent executes and monitor real-time step-by-step task breakdown cards.
+- **🌐 Production Multi-Container Stack**: Dockerized FastAPI backend, Next.js web dashboard with Nginx reverse proxy, and Redis message broker.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Run Terminal AI Agent (Instant)
+```bash
+# Global terminal launcher
 ele
 ```
 
-### Manual Install
+### 2. Slash Commands Quick Reference
+
+| Command | Action |
+| :--- | :--- |
+| `/jarvis` or `/voice` | Launch Speech-to-Speech Jarvis voice listening mode |
+| `/model` | Open interactive popup model selector (102+ models) |
+| `/automate <task>` | Execute autonomous desktop & web workflow |
+| `/todo` | Toggle live sticky task breakdown card |
+| `/new` | Start a clean, fresh conversation session |
+| `/sessions` | Browse, load, or switch saved sessions |
+| `/erase` | Reset & erase all data for a brand new user start |
+| `/keys` | Inspect active API credentials |
+| `/clear` | Clear terminal screen history |
+| `/help` | View help and shortcut list |
+
+---
+
+## 🐳 Production Deployment (Docker)
+
+Deploy the entire production stack (Backend API + Web Dashboard + Nginx + Redis) with a single command:
 
 ```bash
-git clone https://github.com/your-username/ele-agent.git
-cd ele-agent
-python install.py
+# 1. Clone repository
+git clone https://github.com/dhruv/ele.git
+cd ele
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your API keys (NVIDIA_API_KEY, GEMINI_API_KEY, JWT_SECRET_KEY)
+
+# 3. Launch production stack
+./scripts/deploy.sh       # Linux / macOS
+# Or on Windows:
+.\scripts\deploy.ps1
 ```
 
-Then restart terminal and run:
-```bash
-ele
-```
+### Services & Endpoints
+- **Web Dashboard**: [http://localhost:3000](http://localhost:3000)
+- **Backend API**: [http://localhost:8000](http://localhost:8000)
+- **Interactive OpenAPI Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
 
-## Configuration
+---
 
-1. Copy `backend/.env.example` to `backend/.env`
-2. Add your API keys:
-   ```env
-   NVIDIA_API_KEY=your-key-here
-   # OPENAI_API_KEY=
-   # GEMINI_API_KEY=
-   # GROQ_API_KEY=
-   # ANTHROPIC_API_KEY=
-   ```
-
-## Usage
-
-### Terminal Chat (TUI) - Main Interface
-```bash
-ele
-```
-- Type messages and press Enter
-- `Space` + `e` - Toggle autonomous mode
-- `Space` + `s` - Settings
-- `Space` + `p` - Plugins
-- `Space` + `t` - Theme selector
-- `Space` + `n` - New session
-- `Esc` - Exit mode
-
-### Web Dashboard
-```bash
-cd web && npm run dev
-# Open http://localhost:3000
-```
-
-### Desktop App
-```bash
-cd desktop && npm run dev
-```
-
-## Architecture
+## 🏗️ System Architecture
 
 ```
-ele-agent/
-├── backend/          # FastAPI + LangGraph agent
+ELE AGENT ECOSYSTEM
+├── cli/                 # Fast Terminal UI (Node.js & Python Textual)
+│   ├── agy.js           # Core interactive HUD, Speech-to-Speech & Model Switcher
+│   └── agent_overlay.ps1# Visual ghost cursor & desktop window automation
+├── backend/             # FastAPI High-Performance Backend
 │   ├── app/
-│   │   ├── agents/   # LangGraph orchestration
-│   │   ├── rag/      # FAISS + BM25 hybrid search
-│   │   ├── memory/   # 4-layer memory system
-│   │   ├── executors/# File, shell, app tools
-│   │   ├── plugins/  # Plugin loader
-│   │   ├── auth/     # JWT middleware
-│   │   └── routes/   # API routes
-├── cli/              # Textual TUI
-├── web/              # Next.js dashboard
-├── desktop/          # Electron + React
-├── extensions/       # Built-in plugins
-└── docs/             # Documentation
+│   │   ├── agents/      # LangGraph multi-agent orchestration
+│   │   ├── executors/   # System, app, shell, and browser automation executors
+│   │   ├── memory/      # 4-layer memory (vector, episodic, project, working)
+│   │   ├── rag/         # Hybrid BM25 + FAISS search
+│   │   └── routes/      # REST API & WebSocket streaming routes
+│   └── Dockerfile       # Production multi-stage Docker build
+├── web/                 # Next.js 14 Web Dashboard
+│   ├── src/             # Real-time chat & agent monitoring UI
+│   ├── nginx.conf       # High-performance Nginx reverse proxy
+│   └── Dockerfile       # Production static export & runner
+├── scripts/             # Deployment & verification scripts
+│   ├── deploy.sh        # Linux deployment automation
+│   ├── deploy.ps1       # Windows deployment automation
+│   └── verify-production.py # Automated production readiness check
+├── docs/                # Comprehensive system & deployment docs
+│   └── deployment.md    # Production deployment guide
+└── docker-compose.yml   # Production Compose configuration
 ```
 
-## Requirements
+---
 
-- Windows 10/11 (primary), Linux, macOS
-- Python 3.11+ (auto-installed via Miniconda)
-- NVIDIA API key (free at https://build.nvidia.com)
+## 🔒 Security & Best Practices
 
-## License
+- **Zero Hardcoded Secrets**: All API tokens and credentials are loaded securely via `.env` or system keystore.
+- **JWT Authentication & Rate Limiting**: Full token expiration and authentication middleware.
+- **Unprivileged Container Execution**: Docker containers run under a non-root `eleagent` user.
+- **Automated Healthchecks**: Built-in container healthchecks with automatic restart policies.
 
-MIT License
+---
+
+## 🧪 Production Verification
+
+To verify that your installation is 100% production ready, run:
+```bash
+python scripts/verify-production.py
+```
+
+---
+
+## 📄 License
+
+Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.

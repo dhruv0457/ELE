@@ -1,0 +1,96 @@
+# ==============================================================================
+# ELE Agent - Production Docker Compose Stack
+# ==============================================================================
+version: '3.8'
+
+services:
+  # --- Backend FastAPI AI Agent Engine ---
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ele-agent/backend:latest
+    container_name: ele-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - APP_ENV=production
+      - DEBUG=false
+      - PORT=8000
+      - HOST=0.0.0.0
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-ele_production_secret_key_change_me}
+      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///app/data/ele_agent.db}
+    volumes:
+      - backend-data:/app/data
+      - backend-logs:/app/logs
+      - backend-storage:/app/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ele-network
+
+  # --- Web Next.js Frontend Dashboard (Reverse Proxy & UI) ---
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api/v1}
+    image: ele-agent/web:latest
+    container_name: ele-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - ele-network
+
+  # --- Optional Redis Cache & Message Broker (Production) ---
+  redis:
+    image: redis:7-alpine
+    container_name: ele-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-ele_secure_redis_pass}
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ele-network
+
+networks:
+  ele-network:
+    driver: bridge
+
+volumes:
+  backend-data:
+    driver: local
+  backend-logs:
+    driver: local
+  backend-storage:
+    driver: local
+  redis-data:
+    driver: local

@@ -270,6 +270,9 @@ const COMMANDS = [
   { cmd: '/model',    desc: 'Interactive popup model switcher',  icon: '◆' },
   { cmd: '/automate', desc: 'Autonomous app & web agent task',   icon: '⚡' },
   { cmd: '/todo',     desc: 'Toggle sticky note task breakdown', icon: '📌' },
+  { cmd: '/new',      desc: 'Start a fresh new session',         icon: '✨' },
+  { cmd: '/sessions', desc: 'Browse and switch saved sessions',  icon: '📋' },
+  { cmd: '/erase',    desc: 'Erase all user data & fresh reset', icon: '🗑️' },
   { cmd: '/browse',   desc: 'Open browser to specific URL',      icon: '→' },
   { cmd: '/queue',    desc: 'View & manage queued tasks',        icon: '⏳' },
   { cmd: '/clear',    desc: 'Clear chat screen history',         icon: '⊘' },
@@ -433,12 +436,6 @@ function startVoiceListening() {
 
         let spokenText = output.replace(/.*VOICE_TRANSCRIBED:\s*/, '').trim();
         if (spokenText && !S.busy) {
-          // Phonetic normalization for natural speech
-          const lower = spokenText.toLowerCase();
-          if ((lower.includes('plot') || lower.includes('cloud') || lower.includes('claud')) && (lower.includes('open') || lower.includes('go to'))) {
-            spokenText = 'open claude at https://claude.ai';
-          }
-
           S.jarvisStatus = `Heard: "${spokenText}"`;
           S.messages.push({ type: 'user', text: `🎙️ ${spokenText}` });
           render();
@@ -627,7 +624,7 @@ function renderJarvisSpeechOverlay(contentW, padL) {
   out += pad + centerPad + `${P.jarvisBdr}${B.v}${R}  ${P.white}${statusLine}${R}`;
   out += ' '.repeat(Math.max(0, popW - strip(statusLine).length - 4)) + `${P.jarvisBdr}${B.v}${R}\n`;
 
-  const tipLine = `Tip: Say "Open Claude and write script" or type any command`;
+  const tipLine = `Tip: Say "Open Microsoft Office", "Open Word", "Search Google", or type any command`;
   out += pad + centerPad + `${P.jarvisBdr}${B.v}${R}  ${P.muted}${DM}${tipLine}${R}`;
   out += ' '.repeat(Math.max(0, popW - strip(tipLine).length - 4)) + `${P.jarvisBdr}${B.v}${R}\n`;
 
@@ -822,21 +819,234 @@ async function checkAndProcessQueue() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  VISUAL SCREEN OVERLAY & GHOST CURSOR ANIMATOR (HUD & WATERMARK)
+// ═══════════════════════════════════════════════════════════════
+function runVisualOverlay(action, opts = {}) {
+  if (process.platform !== 'win32') return;
+  const overlayScript = path.resolve(process.cwd(), 'agent_overlay.ps1');
+  const fallbackScript1 = path.join('D:', 'ELE', 'cli', 'agent_overlay.ps1');
+  const fallbackScript2 = path.join('D:', 'first_cli', 'app', 'agent_overlay.ps1');
+  const scriptPath = fs.existsSync(overlayScript) ? overlayScript : (fs.existsSync(fallbackScript1) ? fallbackScript1 : fallbackScript2);
+  if (!fs.existsSync(scriptPath)) return;
+
+  const appName = (opts.appName || 'app').replace(/'/g, '');
+  const appTitle = (opts.appTitle || opts.appName || 'Application').replace(/'/g, '');
+  const msg = (opts.message || 'Controlling PC: Automating Task...').replace(/'/g, '');
+  const tx = opts.targetX || 640;
+  const ty = opts.targetY || 360;
+  const duration = opts.durationMs || 1600;
+
+  const psCmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -Action "${action}" -AppName "${appName}" -AppTitle "${appTitle}" -Message "${msg}" -TargetX ${tx} -TargetY ${ty} -DurationMs ${duration}`;
+  exec(psCmd, () => {});
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MASTER WINDOWS APPLICATION & WEB SERVICES REGISTRY
+// ═══════════════════════════════════════════════════════════════
+const APP_REGISTRY = {
+  // Microsoft Office Suite
+  'office': {
+    title: 'Microsoft Office',
+    psCmd: `if (Test-Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\winword.exe") { Start-Process (Get-ItemProperty "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\winword.exe").'(default)' } elseif (Get-Command winword -ErrorAction SilentlyContinue) { Start-Process winword } else { Start-Process "ms-office:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://www.office.com" } }`,
+    webUrl: 'https://www.office.com'
+  },
+  'word': {
+    title: 'Microsoft Word',
+    psCmd: `if (Test-Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\winword.exe") { Start-Process (Get-ItemProperty "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\winword.exe").'(default)' } elseif (Get-Command winword -ErrorAction SilentlyContinue) { Start-Process winword } else { Start-Process "ms-word:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://word.office.com" } }`,
+    webUrl: 'https://word.office.com'
+  },
+  'excel': {
+    title: 'Microsoft Excel',
+    psCmd: `if (Test-Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\excel.exe") { Start-Process (Get-ItemProperty "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\excel.exe").'(default)' } elseif (Get-Command excel -ErrorAction SilentlyContinue) { Start-Process excel } else { Start-Process "ms-excel:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://excel.office.com" } }`,
+    webUrl: 'https://excel.office.com'
+  },
+  'powerpoint': {
+    title: 'Microsoft PowerPoint',
+    psCmd: `if (Test-Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\powerpnt.exe") { Start-Process (Get-ItemProperty "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\powerpnt.exe").'(default)' } elseif (Get-Command powerpnt -ErrorAction SilentlyContinue) { Start-Process powerpnt } else { Start-Process "ms-powerpoint:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://powerpoint.office.com" } }`,
+    webUrl: 'https://powerpoint.office.com'
+  },
+  'onenote': {
+    title: 'Microsoft OneNote',
+    psCmd: `if (Test-Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\OneNote.exe") { Start-Process (Get-ItemProperty "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\OneNote.exe").'(default)' } elseif (Get-Command onenote -ErrorAction SilentlyContinue) { Start-Process onenote } else { Start-Process "onenote:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://www.onenote.com" } }`,
+    webUrl: 'https://www.onenote.com'
+  },
+  'outlook': {
+    title: 'Microsoft Outlook',
+    psCmd: `if (Test-Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\OUTLOOK.EXE") { Start-Process (Get-ItemProperty "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\OUTLOOK.EXE").'(default)' } elseif (Get-Command outlook -ErrorAction SilentlyContinue) { Start-Process outlook } else { Start-Process "outlookmail:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://outlook.live.com" } }`,
+    webUrl: 'https://outlook.live.com'
+  },
+  'teams': {
+    title: 'Microsoft Teams',
+    psCmd: `if (Get-Command teams -ErrorAction SilentlyContinue) { Start-Process teams } else { Start-Process "msteams:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://teams.microsoft.com" } }`,
+    webUrl: 'https://teams.microsoft.com'
+  },
+  'access': {
+    title: 'Microsoft Access',
+    psCmd: `if (Test-Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\MSACCESS.EXE") { Start-Process (Get-ItemProperty "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\MSACCESS.EXE").'(default)' } else { Start-Process msaccess }`,
+    webUrl: 'https://www.office.com'
+  },
+
+  // Browsers
+  'chrome': {
+    title: 'Google Chrome',
+    psCmd: (url) => url ? `Start-Process chrome '${url}' -ErrorAction SilentlyContinue; if (!$?) { Start-Process '${url}' }` : `Start-Process chrome`,
+    webUrl: 'https://www.google.com'
+  },
+  'edge': {
+    title: 'Microsoft Edge',
+    psCmd: (url) => url ? `Start-Process msedge '${url}' -ErrorAction SilentlyContinue; if (!$?) { Start-Process '${url}' }` : `Start-Process msedge`,
+    webUrl: 'https://www.bing.com'
+  },
+  'firefox': {
+    title: 'Mozilla Firefox',
+    psCmd: (url) => url ? `Start-Process firefox '${url}' -ErrorAction SilentlyContinue; if (!$?) { Start-Process '${url}' }` : `Start-Process firefox`,
+    webUrl: 'https://www.mozilla.org'
+  },
+  'brave': {
+    title: 'Brave Browser',
+    psCmd: (url) => url ? `Start-Process brave '${url}' -ErrorAction SilentlyContinue; if (!$?) { Start-Process '${url}' }` : `Start-Process brave`,
+    webUrl: 'https://search.brave.com'
+  },
+
+  // AI & Web Services
+  'claude': {
+    title: 'Anthropic Claude',
+    psCmd: `Start-Process chrome 'https://claude.ai' -ErrorAction SilentlyContinue; if (!$?) { Start-Process 'https://claude.ai' }`,
+    webUrl: 'https://claude.ai'
+  },
+  'chatgpt': {
+    title: 'ChatGPT',
+    psCmd: `Start-Process chrome 'https://chatgpt.com' -ErrorAction SilentlyContinue; if (!$?) { Start-Process 'https://chatgpt.com' }`,
+    webUrl: 'https://chatgpt.com'
+  },
+  'gemini': {
+    title: 'Google Gemini',
+    psCmd: `Start-Process chrome 'https://gemini.google.com' -ErrorAction SilentlyContinue; if (!$?) { Start-Process 'https://gemini.google.com' }`,
+    webUrl: 'https://gemini.google.com'
+  },
+  'youtube': {
+    title: 'YouTube',
+    psCmd: (url) => `Start-Process chrome '${url || "https://youtube.com"}' -ErrorAction SilentlyContinue; if (!$?) { Start-Process '${url || "https://youtube.com"}' }`,
+    webUrl: 'https://youtube.com'
+  },
+  'github': {
+    title: 'GitHub',
+    psCmd: (url) => `Start-Process chrome '${url || "https://github.com"}' -ErrorAction SilentlyContinue; if (!$?) { Start-Process '${url || "https://github.com"}' }`,
+    webUrl: 'https://github.com'
+  },
+  'google': {
+    title: 'Google Search',
+    psCmd: (url) => `Start-Process chrome '${url || "https://www.google.com"}' -ErrorAction SilentlyContinue; if (!$?) { Start-Process '${url || "https://www.google.com"}' }`,
+    webUrl: 'https://www.google.com'
+  },
+
+  // Developer Tools
+  'vscode': {
+    title: 'Visual Studio Code',
+    psCmd: (p) => p ? `Start-Process code '"${p}"'` : `Start-Process code .`
+  },
+  'cursor': {
+    title: 'Cursor AI Editor',
+    psCmd: (p) => p ? `Start-Process cursor '"${p}"'` : `Start-Process cursor .`
+  },
+  'terminal': {
+    title: 'Windows Terminal / PowerShell',
+    psCmd: `if (Get-Command wt -ErrorAction SilentlyContinue) { Start-Process wt } else { Start-Process powershell }`
+  },
+  'cmd': {
+    title: 'Command Prompt',
+    psCmd: `Start-Process cmd`
+  },
+  'powershell': {
+    title: 'PowerShell',
+    psCmd: `Start-Process powershell`
+  },
+
+  // System & Utilities
+  'notepad': {
+    title: 'Notepad',
+    psCmd: (p) => p ? `Start-Process notepad '"${p}"'` : `Start-Process notepad`
+  },
+  'calc': {
+    title: 'Calculator',
+    psCmd: `Start-Process calc`
+  },
+  'paint': {
+    title: 'Paint',
+    psCmd: `Start-Process mspaint`
+  },
+  'explorer': {
+    title: 'File Explorer',
+    psCmd: (dir) => `Start-Process explorer '${dir || "."}'`
+  },
+  'settings': {
+    title: 'Windows Settings',
+    psCmd: `Start-Process "ms-settings:"`
+  },
+  'taskmgr': {
+    title: 'Task Manager',
+    psCmd: `Start-Process taskmgr`
+  },
+  'spotify': {
+    title: 'Spotify',
+    psCmd: `if (Get-Command spotify -ErrorAction SilentlyContinue) { Start-Process spotify } else { Start-Process "spotify:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://open.spotify.com" } }`
+  },
+  'telegram': {
+    title: 'Telegram',
+    psCmd: `if (Test-Path "$env:APPDATA\\Telegram Desktop\\Telegram.exe") { Start-Process "$env:APPDATA\\Telegram Desktop\\Telegram.exe" } else { Start-Process "tg:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://web.telegram.org" } }`
+  },
+  'discord': {
+    title: 'Discord',
+    psCmd: `if (Get-Command discord -ErrorAction SilentlyContinue) { Start-Process discord } else { Start-Process "discord:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://discord.com/app" } }`
+  },
+  'steam': {
+    title: 'Steam',
+    psCmd: `Start-Process "steam:" -ErrorAction SilentlyContinue; if (!$?) { Start-Process "https://store.steampowered.com" }`
+  }
+};
+
+const APP_ALIASES = {
+  'microsoft office': 'office', 'ms office': 'office', 'msoffice': 'office', 'office 365': 'office', 'microsoft 365': 'office',
+  'microsoft word': 'word', 'ms word': 'word', 'winword': 'word', 'docs': 'word', 'doc': 'word',
+  'microsoft excel': 'excel', 'ms excel': 'excel', 'sheets': 'excel', 'spreadsheet': 'excel',
+  'microsoft powerpoint': 'powerpoint', 'ms powerpoint': 'powerpoint', 'powerpnt': 'powerpoint', 'ppt': 'powerpoint', 'slides': 'powerpoint',
+  'microsoft onenote': 'onenote', 'ms onenote': 'onenote',
+  'microsoft outlook': 'outlook', 'ms outlook': 'outlook', 'mail': 'outlook', 'email': 'outlook',
+  'microsoft teams': 'teams', 'ms teams': 'teams',
+  'google chrome': 'chrome', 'google': 'google', 'browser': 'chrome', 'internet': 'chrome', 'web': 'chrome',
+  'microsoft edge': 'edge', 'ms edge': 'edge',
+  'vs code': 'vscode', 'visual studio code': 'vscode', 'code editor': 'vscode', 'code': 'vscode',
+  'calculator': 'calc', 'calculator app': 'calc',
+  'paint': 'paint', 'mspaint': 'paint', 'drawing': 'paint',
+  'file explorer': 'explorer', 'files': 'explorer', 'folder': 'explorer', 'my computer': 'explorer',
+  'task manager': 'taskmgr', 'taskmgr': 'taskmgr',
+  'control panel': 'settings', 'settings': 'settings'
+};
+
+function resolveAppKey(raw) {
+  const norm = (raw || '').toLowerCase().replace(/^(open|launch|start|run|go to)\s+/i, '').trim();
+  if (APP_REGISTRY[norm]) return norm;
+  if (APP_ALIASES[norm]) return APP_ALIASES[norm];
+  for (const [k, v] of Object.entries(APP_ALIASES)) {
+    if (norm.includes(k)) return v;
+  }
+  return norm;
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  REAL LOCAL OS & BROWSER TOOL EXECUTOR (FULL LAPTOP CONTROL & VISUAL CURSOR)
 // ═══════════════════════════════════════════════════════════════
 async function executeRealTool(toolName, args) {
   log(`TOOL_EXEC: ${toolName} ${JSON.stringify(args)}`);
 
-  // 1. Smooth Visual Mouse Cursor Glide
+  // 1. Smooth Visual Mouse Cursor Glide & Click Ripple
   if (toolName === 'mouse_action' || toolName === 'cursor_glide') {
-    const targetX = args.x || 600;
-    const targetY = args.y || 400;
-    if (process.platform === 'win32') {
-      const psGlide = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $cur = [System.Windows.Forms.Cursor]::Position; $sx = $cur.X; $sy = $cur.Y; for ($i=1; $i -le 18; $i++) { $t = $i / 18; $e = (1 - [Math]::Cos($t * [Math]::PI)) / 2; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(([int]($sx + (${targetX} - $sx) * $e)), ([int]($sy + (${targetY} - $sy) * $e))); Start-Sleep -Milliseconds 12 }`;
-      exec(`powershell -NoProfile -Command "${psGlide}"`, () => {});
-    }
-    await sleep(250);
-    return { success: true, message: `Cursor moved smoothly to (${targetX}, ${targetY})` };
+    const targetX = args.x || 640;
+    const targetY = args.y || 360;
+    const msg = args.message || `Interacting at (${targetX}, ${targetY})`;
+    runVisualOverlay('glide_click', { targetX, targetY, message: msg });
+    await sleep(350);
+    return { success: true, message: `Moved cursor and clicked at (${targetX}, ${targetY})` };
   }
 
   // 2. File Writing (Python scripts, code, speeches)
@@ -851,6 +1061,7 @@ async function executeRealTool(toolName, args) {
   // 3. Open in Editor (VS Code with automatic Notepad fallback)
   if (toolName === 'open_editor') {
     const target = path.resolve(process.cwd(), args.path || '.');
+    runVisualOverlay('banner', { message: `Opening in Code Editor: ${path.basename(target)}`, durationMs: 1200 });
     if (process.platform === 'win32') {
       const psOpen = `if (Get-Command code -ErrorAction SilentlyContinue) { Start-Process code '"${target}"' } else { Start-Process notepad '"${target}"' }`;
       exec(`powershell -NoProfile -Command "${psOpen}"`, () => {});
@@ -860,50 +1071,55 @@ async function executeRealTool(toolName, args) {
     return { success: true, message: `Opened editor for: ${path.basename(target)}` };
   }
 
-  // 4. Browser Navigation (Chrome / Claude / Google)
+  // 4. Browser Navigation (Google / Search / YouTube / Any URL)
   if (toolName === 'browser_navigate') {
-    let url = args.url || 'https://claude.ai';
+    let url = args.url || '';
+    if (!url) {
+      if (args.search) {
+        url = `https://www.google.com/search?q=${encodeURIComponent(args.search)}`;
+      } else {
+        url = 'https://www.google.com';
+      }
+    }
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = 'https://' + url;
     }
+    runVisualOverlay('glide_click', { targetX: 640, targetY: 200, message: `Navigating browser to ${url}` });
     if (process.platform === 'win32') {
-      exec(`powershell -NoProfile -Command "Start-Process chrome '${url}'"`, (err) => {
+      exec(`powershell -NoProfile -Command "Start-Process chrome '${url}' -ErrorAction SilentlyContinue; if (!$?) { Start-Process '${url}' }"`, (err) => {
         if (err) exec(`start "" "${url}"`, () => {});
       });
     } else {
       exec(`open "${url}" || xdg-open "${url}"`, () => {});
     }
-    return { success: true, message: `Opened Chrome browser to: ${url}` };
+    return { success: true, message: `Navigated browser to: ${url}` };
   }
 
-  // 5. Windows Native Application Launching (Notepad, Claude, Calc, Explorer, Paint, VS Code)
+  // 5. Windows Native Application Launching (Office, Word, Excel, PowerPoint, VS Code, Chrome, etc.)
   if (toolName === 'app_launch') {
-    const app = (args.app || args.name || 'chrome').toLowerCase().trim();
+    const rawApp = args.app || args.name || 'office';
+    const appKey = resolveAppKey(rawApp);
+    const reg = APP_REGISTRY[appKey] || {
+      title: rawApp.charAt(0).toUpperCase() + rawApp.slice(1),
+      psCmd: `if (Get-Command ${rawApp} -ErrorAction SilentlyContinue) { Start-Process ${rawApp} } else { Start-Process '${rawApp}' }`
+    };
+
+    // Run Full On-Screen Watermark Animation (Glide to Start, Click Ripple, Launch App, Focus Center Window)
+    runVisualOverlay('launch_app', { appName: appKey, appTitle: reg.title });
+
     if (process.platform === 'win32') {
-      let psCmd = `Start-Process ${app}`;
-      if (['claude', 'cloud', 'plot', 'chrome'].includes(app)) {
-        const targetUrl = args.url || 'https://claude.ai';
-        psCmd = `Start-Process chrome '${targetUrl}'`;
-      } else if (['vscode', 'code'].includes(app)) {
-        psCmd = args.path ? `Start-Process code '"${args.path}"'` : `Start-Process code .`;
-      } else if (['notepad', 'note'].includes(app)) {
-        psCmd = args.path ? `Start-Process notepad '"${args.path}"'` : `Start-Process notepad`;
-      } else if (['calculator', 'calc'].includes(app)) {
-        psCmd = `Start-Process calc`;
-      } else if (['explorer', 'files', 'folder'].includes(app)) {
-        psCmd = `Start-Process explorer .`;
-      } else if (['spotify'].includes(app)) {
-        psCmd = `Start-Process spotify`;
-      } else if (['paint', 'mspaint'].includes(app)) {
-        psCmd = `Start-Process mspaint`;
-      } else if (['cmd', 'terminal', 'powershell'].includes(app)) {
-        psCmd = `Start-Process powershell`;
+      let finalPs = '';
+      if (typeof reg.psCmd === 'function') {
+        finalPs = reg.psCmd(args.url || args.path);
+      } else {
+        finalPs = reg.psCmd;
       }
-      exec(`powershell -NoProfile -Command "${psCmd}"`, () => {});
+      exec(`powershell -NoProfile -Command "${finalPs}"`, () => {});
     } else {
-      exec(`open -a "${app}" || ${app}`, () => {});
+      exec(`open -a "${appKey}" || ${appKey}`, () => {});
     }
-    return { success: true, message: `Launched Windows application: ${app.toUpperCase()}` };
+    await sleep(600);
+    return { success: true, message: `Launched application: ${reg.title}` };
   }
 
   // 6. Text Typing into Active Application (WScript.Shell SendKeys)
@@ -923,7 +1139,7 @@ async function executeRealTool(toolName, args) {
     if (process.platform === 'win32') {
       exec(`powershell -NoProfile -Command "Set-Clipboard -Value '${text}'"`, () => {});
     }
-    return { success: true, message: `Copied generated speech/code to clipboard (${(args.text || '').length} chars)` };
+    return { success: true, message: `Copied generated text to clipboard (${(args.text || '').length} chars)` };
   }
 
   if (toolName === 'minimize_terminal') {
@@ -990,24 +1206,31 @@ async function runAIAgent(prompt) {
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
     const systemPrompt = `You are ELE, an intelligent autonomous AI Developer Assistant and JARVIS-style OS Copilot.
-You run natively in the user's terminal and have DIRECT access to execute actions on the operating system.
+You run natively on the user's PC and have DIRECT access to execute actions on the operating system with live visual HUD overlays.
 
-When the user asks you to write code, generate scripts, open applications, browse web pages, or automate tasks, you MUST ALWAYS output structured TOOL_CALL commands so the system executes them for the user in real life. Be concise, direct, and fast.
+When the user asks you to open applications, browse web pages, write code, search Google/YouTube, or automate desktop tasks, ALWAYS output structured TOOL_CALL commands. Be intelligent, direct, and fast.
 
 AVAILABLE TOOL CALLS (Put each on its own line):
-TOOL_CALL file_write {"path": "filename.py", "content": "print('hello')"}
-TOOL_CALL open_editor {"path": "filename.py"}
-TOOL_CALL browser_navigate {"url": "https://claude.ai"}
-TOOL_CALL clipboard_set {"text": "some text"}
+TOOL_CALL app_launch {"app": "office", "name": "Microsoft Office"}
+TOOL_CALL app_launch {"app": "word", "name": "Microsoft Word"}
+TOOL_CALL app_launch {"app": "excel", "name": "Microsoft Excel"}
+TOOL_CALL app_launch {"app": "powerpoint", "name": "Microsoft PowerPoint"}
+TOOL_CALL app_launch {"app": "vscode"}
 TOOL_CALL app_launch {"app": "chrome"}
+TOOL_CALL browser_navigate {"url": "https://www.google.com/search?q=query"}
+TOOL_CALL browser_navigate {"url": "https://www.youtube.com/results?search_query=query"}
+TOOL_CALL file_write {"path": "script.py", "content": "print('hello')"}
+TOOL_CALL open_editor {"path": "script.py"}
+TOOL_CALL clipboard_set {"text": "content"}
 TOOL_CALL type_text {"text": "some text"}
-TOOL_CALL shell {"command": "python script.py"}
-TOOL_CALL mouse_action {"action": "click", "target": "#button"}
+TOOL_CALL mouse_action {"action": "glide_click", "x": 640, "y": 360, "message": "Clicking button"}
+TOOL_CALL shell {"command": "dir"}
 
 RULES:
-- When user asks to "open claude" or "go to claude/cloud" -> TOOL_CALL browser_navigate {"url": "https://claude.ai"}
-- When user asks for a speech/script -> generate high quality text AND use TOOL_CALL clipboard_set {"text": "..."} AND TOOL_CALL file_write {"path": "christmas_speech.md", "content": "..."}
-- Provide a clear, friendly explanation in addition to the tool calls.`;
+- When user asks to open ANY application (e.g. "open Microsoft Office", "open Word", "open Excel", "open PowerPoint", "open Chrome", "open Telegram", "open VS Code", "open Spotify", "open Notepad", "open Calculator") -> Use TOOL_CALL app_launch with the target app!
+- When user asks to search or browse (e.g. "search on google", "open youtube", "go to website") -> Use TOOL_CALL browser_navigate with appropriate URL!
+- When user asks for scripts/speeches/code -> Write code AND save to file AND copy to clipboard.
+- Provide a brief, friendly explanation along with your tool calls.`;
 
     const messagesPayload = [
       { role: 'system', content: systemPrompt },
@@ -1151,64 +1374,267 @@ RULES:
         await sleep(250);
       }
     } else {
-      // ── SMART INTENT & VISUAL DESKTOP AUTOMATION ENGINE ──
+      // ── UNIVERSAL INTELLIGENT INTENT & VISUAL DESKTOP AUTOMATION ENGINE ──
       const lower = prompt.toLowerCase();
-      const isClaude = lower.includes('claude') || lower.includes('cloud') || lower.includes('plot') || lower.includes('claud');
-      const isSpeech = lower.includes('speech') || lower.includes('christmas') || lower.includes('essay');
-      const isScript = lower.includes('script') || lower.includes('python') || lower.includes('code') || lower.includes('program');
+
+      // Check for Microsoft Office / Apps
+      const isOffice = lower.includes('office') || lower.includes('microsoft office') || lower.includes('ms office') || lower.includes('365');
+      const isWord = lower.includes('word') || lower.includes('winword') || lower.includes('document');
+      const isExcel = lower.includes('excel') || lower.includes('spreadsheet') || lower.includes('sheet');
+      const isPPT = lower.includes('powerpoint') || lower.includes('powerpnt') || lower.includes('ppt') || lower.includes('presentation') || lower.includes('slide');
+      const isOneNote = lower.includes('onenote');
+      const isOutlook = lower.includes('outlook') || lower.includes('email') || lower.includes('mail');
+      const isTeams = lower.includes('teams');
+
+      // Browsers & Search
+      const isYouTube = lower.includes('youtube');
+      const isGoogleSearch = lower.includes('search google') || lower.includes('search for') || lower.includes('google search') || lower.includes('find on google');
+      const isChrome = lower.includes('chrome') || lower.includes('browser') || lower.includes('internet');
+      const isClaude = (lower.includes('claude') || lower.includes('anthropic')) && !isOffice;
+      const isChatGPT = lower.includes('chatgpt') || lower.includes('openai');
+      const isGemini = lower.includes('gemini') || lower.includes('google ai');
+
+      // Developers & Utilities
+      const isVSCode = lower.includes('vscode') || lower.includes('vs code') || lower.includes('visual studio code') || lower.includes('code editor');
+      const isTerminal = lower.includes('terminal') || lower.includes('command prompt') || lower.includes('powershell') || lower.includes('cmd');
       const isNotepad = lower.includes('notepad') || lower.includes('note');
       const isCalc = lower.includes('calculator') || lower.includes('calc');
       const isExplorer = lower.includes('explorer') || lower.includes('files') || lower.includes('folder');
       const isPaint = lower.includes('paint') || lower.includes('drawing');
-      const isSpotify = lower.includes('spotify');
+      const isSpotify = lower.includes('spotify') || lower.includes('music');
+      const isTelegram = lower.includes('telegram');
+      const isDiscord = lower.includes('discord');
+      const isSettings = lower.includes('settings') || lower.includes('control panel');
 
-      if (isClaude && isSpeech) {
-        const christmasSpeech = `# 🎄 Christmas Celebration Speech\n\n**Ladies, Gentlemen, and Cherished Friends,**\n\nMerry Christmas to you all! Tonight, we gather under the warm glow of fellowship, gratitude, and joy. Christmas is not merely a season on the calendar—it is a condition of the heart. It is the laughter shared around the table, the warmth of fond memories, and the promise of peace and goodwill to all mankind.\n\nAs we look back upon this year, let us hold fast to kindness, forgive quickly, love generously, and inspire those around us. May your homes be filled with wonder and your hearts with peace.\n\n**Merry Christmas and a Happy New Year!**\n`;
+      // Content generation
+      const isSpeech = lower.includes('speech') || lower.includes('christmas') || lower.includes('essay');
+      const isScript = lower.includes('script') || lower.includes('python') || lower.includes('code') || lower.includes('program');
 
+      if (isWord) {
         S.todoList = [
-          { id: 1, text: 'Glide Cursor & Launch Chrome to Claude (https://claude.ai)', status: 'running' },
-          { id: 2, text: 'Generate Inspiring Christmas Speech', status: 'pending' },
-          { id: 3, text: 'Save Speech to christmas_speech.md', status: 'pending' },
-          { id: 4, text: 'Copy Speech to Windows Clipboard & Type into Active Window', status: 'pending' },
+          { id: 1, text: 'Glide Cursor & Launch Microsoft Word (WinWord / Office)', status: 'running' },
+          { id: 2, text: 'Activate Workspace Window & Focus Document Canvas', status: 'pending' }
         ];
         render();
-
-        await executeRealTool('mouse_action', { x: 700, y: 400 });
-        await executeRealTool('browser_navigate', { url: 'https://claude.ai' });
+        await executeRealTool('app_launch', { app: 'word', name: 'Microsoft Word' });
         S.todoList[0].status = 'done';
-        S.todoList[1].status = 'running';
-        render();
-        await sleep(200);
-
-        await executeRealTool('file_write', { path: 'christmas_speech.md', content: christmasSpeech });
         S.todoList[1].status = 'done';
-        S.todoList[2].status = 'done';
-        S.todoList[3].status = 'running';
+        agentMsg.text = agentMsg.text || '✨ **Microsoft Word Launched Successfully!**\nVisual Ghost Cursor navigated to Start Menu, searched for Microsoft Word, and launched the application.';
+        S.messages.push({ type: 'action', text: 'Opened Microsoft Word on your desktop!' });
+      } else if (isExcel) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Launch Microsoft Excel (Spreadsheets)', status: 'running' },
+          { id: 2, text: 'Focus Excel Grid Workspace', status: 'pending' }
+        ];
         render();
-        await sleep(200);
-
-        await executeRealTool('clipboard_set', { text: christmasSpeech });
-        await executeRealTool('type_text', { text: 'Write a speech for me about Christmas' });
-        S.todoList[3].status = 'done';
-
-        agentMsg.text = `🎄 **Christmas Speech Generated & Ready!**\n\n1. Visual cursor moved and opened **Claude** (https://claude.ai) in Chrome.\n2. Created and saved **christmas_speech.md**\n3. Copied speech to your **Clipboard** (Ready to paste Ctrl+V)\n\n---\n${christmasSpeech}`;
-        S.messages.push({ type: 'action', text: 'Opened Claude in Chrome & Copied Christmas Speech to Clipboard!' });
+        await executeRealTool('app_launch', { app: 'excel', name: 'Microsoft Excel' });
+        S.todoList[0].status = 'done';
+        S.todoList[1].status = 'done';
+        agentMsg.text = agentMsg.text || '✨ **Microsoft Excel Launched Successfully!**\nVisual Ghost Cursor navigated and opened Microsoft Excel.';
+        S.messages.push({ type: 'action', text: 'Opened Microsoft Excel on your desktop!' });
+      } else if (isPPT) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Launch Microsoft PowerPoint (Presentations)', status: 'running' },
+          { id: 2, text: 'Focus Slide Deck Canvas', status: 'pending' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'powerpoint', name: 'Microsoft PowerPoint' });
+        S.todoList[0].status = 'done';
+        S.todoList[1].status = 'done';
+        agentMsg.text = agentMsg.text || '✨ **Microsoft PowerPoint Launched Successfully!**\nVisual Ghost Cursor navigated and opened PowerPoint.';
+        S.messages.push({ type: 'action', text: 'Opened Microsoft PowerPoint on your desktop!' });
+      } else if (isOneNote) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Launch Microsoft OneNote', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'onenote', name: 'Microsoft OneNote' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = '✨ **Microsoft OneNote Launched Successfully!**';
+        S.messages.push({ type: 'action', text: 'Opened Microsoft OneNote!' });
+      } else if (isOutlook) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Launch Microsoft Outlook Mail', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'outlook', name: 'Microsoft Outlook' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = '✨ **Microsoft Outlook Launched Successfully!**';
+        S.messages.push({ type: 'action', text: 'Opened Microsoft Outlook!' });
+      } else if (isTeams) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Launch Microsoft Teams', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'teams', name: 'Microsoft Teams' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = '✨ **Microsoft Teams Launched Successfully!**';
+        S.messages.push({ type: 'action', text: 'Opened Microsoft Teams!' });
+      } else if (isOffice) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor to Start Menu & Launch Microsoft Office Hub', status: 'running' },
+          { id: 2, text: 'Activate Office 365 Dashboard & Document Suite', status: 'pending' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'office', name: 'Microsoft Office' });
+        S.todoList[0].status = 'done';
+        S.todoList[1].status = 'done';
+        agentMsg.text = agentMsg.text || '✨ **Microsoft Office Launched Successfully!**\nVisual Ghost Cursor navigated across the screen to the Windows Start Menu, located Microsoft Office, and launched your productivity suite.';
+        S.messages.push({ type: 'action', text: 'Opened Microsoft Office on your desktop!' });
+      } else if (isYouTube) {
+        const queryMatch = lower.match(/(?:for|about|search|play)\s+([^.]+)/i);
+        const q = queryMatch ? queryMatch[1].trim() : '';
+        const targetUrl = q ? `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}` : 'https://www.youtube.com';
+        S.todoList = [
+          { id: 1, text: `Glide Cursor & Launch YouTube (${q || 'Home'})`, status: 'running' },
+          { id: 2, text: 'Focus Browser Window & Play Stream', status: 'pending' }
+        ];
+        render();
+        await executeRealTool('browser_navigate', { url: targetUrl });
+        S.todoList[0].status = 'done';
+        S.todoList[1].status = 'done';
+        agentMsg.text = `📺 **Opened YouTube** at ${targetUrl}`;
+        S.messages.push({ type: 'action', text: `Opened YouTube (${q || 'Home'}) in Chrome!` });
+      } else if (isGoogleSearch) {
+        const queryMatch = lower.match(/(?:for|about|search|google)\s+([^.]+)/i);
+        const q = queryMatch ? queryMatch[1].trim() : 'latest news';
+        const targetUrl = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+        S.todoList = [
+          { id: 1, text: `Search Google for "${q}"`, status: 'running' },
+          { id: 2, text: 'Render Search Results in Browser', status: 'pending' }
+        ];
+        render();
+        await executeRealTool('browser_navigate', { url: targetUrl });
+        S.todoList[0].status = 'done';
+        S.todoList[1].status = 'done';
+        agentMsg.text = `🔍 **Google Search Results Ready** for "${q}"`;
+        S.messages.push({ type: 'action', text: `Searched Google for "${q}"` });
       } else if (isClaude) {
         S.todoList = [
-          { id: 1, text: 'Move Cursor & Launch Chrome to Claude (https://claude.ai)', status: 'running' },
-          { id: 2, text: 'Focus Browser Window & Prepare Input', status: 'pending' }
+          { id: 1, text: 'Glide Cursor & Launch Chrome to Claude (https://claude.ai)', status: 'running' }
         ];
         render();
-        await executeRealTool('mouse_action', { x: 600, y: 350 });
-        await executeRealTool('browser_navigate', { url: 'https://claude.ai' });
+        await executeRealTool('app_launch', { app: 'claude', name: 'Claude' });
         S.todoList[0].status = 'done';
-        S.todoList[1].status = 'running';
+        agentMsg.text = 'Opened Claude at https://claude.ai in your browser.';
+        S.messages.push({ type: 'action', text: 'Opened Claude at https://claude.ai' });
+      } else if (isChatGPT) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Launch Chrome to ChatGPT (https://chatgpt.com)', status: 'running' }
+        ];
         render();
-        await sleep(300);
-        await executeRealTool('type_text', { text: 'Hello Claude' });
-        S.todoList[1].status = 'done';
-        agentMsg.text = agentMsg.text || 'Opened Claude at https://claude.ai in Chrome and focused input.';
-        S.messages.push({ type: 'action', text: 'Opened Claude at https://claude.ai in your Chrome browser.' });
+        await executeRealTool('app_launch', { app: 'chatgpt', name: 'ChatGPT' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Opened ChatGPT in your browser.';
+        S.messages.push({ type: 'action', text: 'Opened ChatGPT' });
+      } else if (isGemini) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Launch Chrome to Google Gemini (https://gemini.google.com)', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'gemini', name: 'Google Gemini' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Opened Google Gemini in your browser.';
+        S.messages.push({ type: 'action', text: 'Opened Google Gemini' });
+      } else if (isVSCode) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Launch Visual Studio Code', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'vscode', name: 'Visual Studio Code' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Launched Visual Studio Code.';
+        S.messages.push({ type: 'action', text: 'Opened VS Code editor.' });
+      } else if (isTerminal) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Open Windows Terminal / PowerShell', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'terminal', name: 'Windows Terminal' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Opened Windows Terminal.';
+        S.messages.push({ type: 'action', text: 'Opened Terminal window.' });
+      } else if (isChrome) {
+        S.todoList = [
+          { id: 1, text: 'Glide Cursor & Launch Google Chrome Browser', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'chrome', name: 'Google Chrome' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Launched Google Chrome browser.';
+        S.messages.push({ type: 'action', text: 'Opened Google Chrome browser.' });
+      } else if (isNotepad) {
+        S.todoList = [
+          { id: 1, text: 'Glide Mouse Cursor & Launch Windows Notepad', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'notepad', name: 'Notepad' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Launched Windows Notepad.';
+        S.messages.push({ type: 'action', text: 'Opened Windows Notepad application.' });
+      } else if (isCalc) {
+        S.todoList = [
+          { id: 1, text: 'Glide Mouse Cursor & Launch Windows Calculator', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'calc', name: 'Calculator' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Launched Windows Calculator.';
+        S.messages.push({ type: 'action', text: 'Opened Windows Calculator application.' });
+      } else if (isExplorer) {
+        S.todoList = [
+          { id: 1, text: 'Glide Mouse Cursor & Open File Explorer', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'explorer', name: 'File Explorer' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Opened Windows File Explorer.';
+        S.messages.push({ type: 'action', text: 'Opened Windows File Explorer.' });
+      } else if (isPaint) {
+        S.todoList = [
+          { id: 1, text: 'Glide Mouse Cursor & Open Paint', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'paint', name: 'Paint' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Opened Windows Paint application.';
+        S.messages.push({ type: 'action', text: 'Opened Paint application.' });
+      } else if (isSpotify) {
+        S.todoList = [
+          { id: 1, text: 'Glide Mouse Cursor & Launch Spotify', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'spotify', name: 'Spotify' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Launched Spotify.';
+        S.messages.push({ type: 'action', text: 'Opened Spotify application.' });
+      } else if (isTelegram) {
+        S.todoList = [
+          { id: 1, text: 'Glide Mouse Cursor & Launch Telegram Desktop', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'telegram', name: 'Telegram' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Launched Telegram Desktop.';
+        S.messages.push({ type: 'action', text: 'Opened Telegram Desktop.' });
+      } else if (isDiscord) {
+        S.todoList = [
+          { id: 1, text: 'Glide Mouse Cursor & Launch Discord', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'discord', name: 'Discord' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Launched Discord.';
+        S.messages.push({ type: 'action', text: 'Opened Discord.' });
+      } else if (isSettings) {
+        S.todoList = [
+          { id: 1, text: 'Glide Mouse Cursor & Open Windows Settings', status: 'running' }
+        ];
+        render();
+        await executeRealTool('app_launch', { app: 'settings', name: 'Windows Settings' });
+        S.todoList[0].status = 'done';
+        agentMsg.text = 'Opened Windows Settings.';
+        S.messages.push({ type: 'action', text: 'Opened Windows Settings.' });
       } else if (isScript) {
         const sampleScript = `#!/usr/bin/env python3\n\"\"\"\nGenerated Python Script by ELE Agent & JARVIS\nAutonomous System Script\n\"\"\"\nimport sys\nimport os\nimport time\nimport math\n\ndef main():\n    print("=" * 50)\n    print("⚡ ELE Agent & JARVIS Autonomous Script")\n    print(f"📁 Working Directory: {os.getcwd()}")\n    print(f"🐍 Python Version: {sys.version.split()[0]}")\n    print("=" * 50)\n    \n    print("\\n[+] Running calculation demonstration:")\n    for i in range(1, 6):\n        sq = i ** 2\n        root = math.sqrt(i)\n        print(f"  Item #{i}: Square = {sq:2d} | Sqrt = {root:.4f}")\n        time.sleep(0.05)\n        \n    print("\\n✓ Task execution complete successfully!\\n")\n\nif __name__ == '__main__':\n    main()\n`;
         const scriptName = 'script.py';
@@ -1222,62 +1648,40 @@ RULES:
         S.todoList[1].status = 'running';
         render();
         await sleep(200);
-        await executeRealTool('mouse_action', { x: 550, y: 350 });
         await executeRealTool('open_editor', { path: scriptName });
         S.todoList[1].status = 'done';
 
         agentMsg.text = `⚡ **Generated Python Script (\`${scriptName}\`) & Opened in Editor!**\n\n\`\`\`python\n${sampleScript}\`\`\`\n\n*File created at: \`${path.resolve(process.cwd(), scriptName)}\`*`;
         S.messages.push({ type: 'action', text: `Created ${scriptName} and opened in your code editor!` });
-      } else if (isNotepad) {
+      } else if (isSpeech) {
+        const generatedSpeech = `# 🌟 Inspirational Celebration Speech\n\n**Ladies, Gentlemen, and Esteemed Friends,**\n\nThank you for gathering here today. Progress is never an accident—it is the result of intention, unwavering dedication, and the courage to take bold steps forward into the unknown.\n\nAs we look ahead, let us commit to lifting one another up, creating solutions with purpose, and transforming every challenge into a stepping stone toward excellence.\n\n**Thank you, and let us build the future together!**\n`;
         S.todoList = [
-          { id: 1, text: 'Glide Mouse Cursor & Launch Windows Notepad', status: 'running' }
+          { id: 1, text: 'Generate Inspiring Speech', status: 'running' },
+          { id: 2, text: 'Save Speech to speech.md', status: 'pending' },
+          { id: 3, text: 'Copy to Windows Clipboard & Open in Editor', status: 'pending' },
         ];
         render();
-        await executeRealTool('mouse_action', { x: 500, y: 300 });
-        await executeRealTool('app_launch', { app: 'notepad' });
+        await executeRealTool('file_write', { path: 'speech.md', content: generatedSpeech });
         S.todoList[0].status = 'done';
-        agentMsg.text = 'Launched Windows Notepad.';
-        S.messages.push({ type: 'action', text: 'Opened Windows Notepad application.' });
-      } else if (isCalc) {
+        S.todoList[1].status = 'done';
+        S.todoList[2].status = 'running';
+        render();
+        await sleep(200);
+        await executeRealTool('clipboard_set', { text: generatedSpeech });
+        await executeRealTool('open_editor', { path: 'speech.md' });
+        S.todoList[2].status = 'done';
+        agentMsg.text = `🌟 **Speech Generated & Saved!**\n\n1. Saved to **speech.md**\n2. Copied to your **Clipboard** (Ready to paste Ctrl+V)\n3. Opened in your text editor.\n\n---\n${generatedSpeech}`;
+        S.messages.push({ type: 'action', text: 'Speech generated, saved to file, and copied to clipboard!' });
+      } else if (lower.startsWith('open ') || lower.startsWith('launch ') || lower.startsWith('start ')) {
+        const appExtract = lower.replace(/^(open|launch|start|run|go to)\s+/i, '').trim();
         S.todoList = [
-          { id: 1, text: 'Glide Mouse Cursor & Launch Windows Calculator', status: 'running' }
+          { id: 1, text: `Glide Cursor & Launch "${appExtract}"`, status: 'running' }
         ];
         render();
-        await executeRealTool('mouse_action', { x: 500, y: 300 });
-        await executeRealTool('app_launch', { app: 'calc' });
+        await executeRealTool('app_launch', { app: appExtract });
         S.todoList[0].status = 'done';
-        agentMsg.text = 'Launched Windows Calculator.';
-        S.messages.push({ type: 'action', text: 'Opened Windows Calculator application.' });
-      } else if (isExplorer) {
-        S.todoList = [
-          { id: 1, text: 'Glide Mouse Cursor & Open File Explorer', status: 'running' }
-        ];
-        render();
-        await executeRealTool('mouse_action', { x: 500, y: 300 });
-        await executeRealTool('app_launch', { app: 'explorer' });
-        S.todoList[0].status = 'done';
-        agentMsg.text = 'Opened Windows File Explorer.';
-        S.messages.push({ type: 'action', text: 'Opened Windows File Explorer at current directory.' });
-      } else if (isPaint) {
-        S.todoList = [
-          { id: 1, text: 'Glide Mouse Cursor & Open Paint', status: 'running' }
-        ];
-        render();
-        await executeRealTool('mouse_action', { x: 500, y: 300 });
-        await executeRealTool('app_launch', { app: 'paint' });
-        S.todoList[0].status = 'done';
-        agentMsg.text = 'Opened Windows Paint application.';
-        S.messages.push({ type: 'action', text: 'Opened Paint application.' });
-      } else if (isSpotify) {
-        S.todoList = [
-          { id: 1, text: 'Glide Mouse Cursor & Launch Spotify', status: 'running' }
-        ];
-        render();
-        await executeRealTool('mouse_action', { x: 500, y: 300 });
-        await executeRealTool('app_launch', { app: 'spotify' });
-        S.todoList[0].status = 'done';
-        agentMsg.text = 'Launched Spotify.';
-        S.messages.push({ type: 'action', text: 'Opened Spotify application.' });
+        agentMsg.text = `Launched **${appExtract}** with visual agent navigation.`;
+        S.messages.push({ type: 'action', text: `Launched ${appExtract} on Windows.` });
       }
     }
 
@@ -1347,12 +1751,15 @@ async function dispatchInput(input) {
     case '/help': return cmdHelp();
     case '/jarvis': case '/voice': return openJarvisVoiceMode();
     case '/model': return openModelModal();
-    case '/automate': return runAIAgent(args || 'open claude at https://claude.ai and copy credentials');
+    case '/automate': return runAIAgent(args || 'open Microsoft Office');
     case '/todo': return cmdToggleTodo();
     case '/queue': return cmdQueue();
     case '/keys': return cmdKeys();
     case '/browse': return cmdBrowse(args);
     case '/clear': return cmdClear();
+    case '/new': return cmdNew();
+    case '/sessions': case '/switch': return cmdSessions(args);
+    case '/erase': case '/erasedata': return cmdErase();
     case '/editor': return cmdEditor(args);
     case '/exit': case '/quit': return cmdExit();
     default:
@@ -1378,6 +1785,75 @@ function cmdHelp() {
   t += '  /           Autocomplete Menu\n';
   t += '  ctrl+c      Quit';
   S.messages.push({ type: 'system', text: t });
+  render();
+}
+
+function cmdNew() {
+  S.messages = [];
+  S.todoList = [];
+  S.queue = [];
+  S.messages.push({ type: 'info', text: '✨ Started a fresh new session.' });
+  render();
+}
+
+function cmdSessions(args) {
+  try {
+    const userHome = process.env.USERPROFILE || process.env.HOME || '';
+    const sessionsDir = path.join(userHome, '.ele-agent', 'sessions');
+    if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+
+    if (args) {
+      // Save or switch
+      const sessionFile = path.join(sessionsDir, `${args.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+      if (fs.existsSync(sessionFile)) {
+        const data = JSON.parse(fs.readFileSync(sessionFile, 'utf-8'));
+        S.messages = data.messages || [];
+        S.messages.push({ type: 'info', text: `Loaded session: "${args}"` });
+      } else {
+        fs.writeFileSync(sessionFile, JSON.stringify({ messages: S.messages, timestamp: new Date().toISOString() }, null, 2));
+        S.messages.push({ type: 'info', text: `Saved current session as: "${args}"` });
+      }
+    } else {
+      const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
+      if (files.length === 0) {
+        S.messages.push({ type: 'info', text: 'No saved sessions found. Type "/sessions <name>" to save current session.' });
+      } else {
+        let t = 'Saved Sessions:\n';
+        for (const f of files) {
+          t += `  • ${f.replace('.json', '')}\n`;
+        }
+        t += '\nType "/sessions <name>" to load or save a session.';
+        S.messages.push({ type: 'system', text: t });
+      }
+    }
+  } catch (e) {
+    S.messages.push({ type: 'error', text: `Sessions error: ${e.message}` });
+  }
+  render();
+}
+
+function cmdErase() {
+  try {
+    const userHome = process.env.USERPROFILE || process.env.HOME || '';
+    const targets = [
+      path.join(userHome, '.ele-agent', 'sessions'),
+      path.join(userHome, '.ele-agent', 'profile.json'),
+      path.join(userHome, '.ele-data'),
+      path.join('D:', 'LOGS', 'hive'),
+    ];
+    for (const t of targets) {
+      if (fs.existsSync(t)) {
+        fs.rmSync(t, { recursive: true, force: true });
+      }
+    }
+    S.messages = [];
+    S.todoList = [];
+    S.queue = [];
+    S.history = [];
+    S.messages.push({ type: 'info', text: '🗑️ All user data, sessions, and histories erased! Fresh start initialized.' });
+  } catch (e) {
+    S.messages.push({ type: 'error', text: `Erase error: ${e.message}` });
+  }
   render();
 }
 

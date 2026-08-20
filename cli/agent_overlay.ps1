@@ -3,13 +3,13 @@
 #  Gemini / Anthropic Computer Use HUD • Glowing Ripple • Watermark
 # ═══════════════════════════════════════════════════════════════
 param(
-    [string]$Action = "launch_app", # "launch_app", "glide_click", "banner", "ripple"
+    [string]$Action = "launch_app",
     [string]$AppName = "office",
     [string]$AppTitle = "Microsoft Office",
     [string]$Message = "Controlling PC: Automating Task...",
     [int]$TargetX = 640,
     [int]$TargetY = 360,
-    [int]$DurationMs = 2000
+    [int]$DurationMs = 1800
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms, System.Drawing
@@ -19,8 +19,7 @@ $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 $screenWidth = $screen.Width
 $screenHeight = $screen.Height
 
-# Function to smoothly move cursor
-function Move-CursorSmooth([int]$dstX, [int]$dstY, [int]$steps = 20, [int]$delayMs = 10) {
+function Move-CursorSmooth([int]$dstX, [int]$dstY, [int]$steps = 18, [int]$delayMs = 10) {
     $cur = [System.Windows.Forms.Cursor]::Position
     $sx = $cur.X
     $sy = $cur.Y
@@ -36,6 +35,9 @@ function Move-CursorSmooth([int]$dstX, [int]$dstY, [int]$steps = 20, [int]$delay
 
 if ($Action -eq "banner" -or $Action -eq "launch_app" -or $Action -eq "ripple" -or $Action -eq "glide_click") {
     $capsuleLeft = [int]($screenWidth / 2 - 280)
+    $safeAppTitle = $AppTitle -replace "&", "and"
+    $safeMessage = $Message -replace "&", "and"
+
     $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -79,7 +81,7 @@ if ($Action -eq "banner" -or $Action -eq "launch_app" -or $Action -eq "ripple" -
                         <TextBlock Text=" • " FontSize="11" Foreground="#64748B"/>
                         <TextBlock Name="ActionTag" Text="AUTONOMOUS CONTROL" FontSize="11" FontWeight="SemiBold" Foreground="#A855F7"/>
                     </StackPanel>
-                    <TextBlock Name="StatusText" Text="$Message" FontSize="13" FontWeight="Bold" Foreground="#F8FAFC"
+                    <TextBlock Name="StatusText" Text="$safeMessage" FontSize="13" FontWeight="Bold" Foreground="#F8FAFC"
                                TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
                 </StackPanel>
 
@@ -122,22 +124,22 @@ if ($Action -eq "banner" -or $Action -eq "launch_app" -or $Action -eq "ripple" -
 
     $window.Show()
 
-    # Animate Capsule In (Fade In)
+    # Fade In
     for ($op = 0; $op -le 10; $op++) {
         $hudCapsule.Opacity = $op / 10.0
         [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 10
+        Start-Sleep -Milliseconds 8
     }
 
     if ($Action -eq "launch_app") {
         # STEP 1: Glide to Start Button / Taskbar
-        $statusText.Text = "Step 1/3: Navigating to Start Menu for $AppTitle..."
+        $statusText.Text = "Step 1/3: Navigating to Start Menu for " + $safeAppTitle + "..."
         $stepBadge.Text = "STEP 1/3"
         [System.Windows.Forms.Application]::DoEvents()
         
         $startX = 36
         $startY = $screenHeight - 24
-        Move-CursorSmooth $startX $startY 18 10
+        Move-CursorSmooth $startX $startY 16 10
 
         # Trigger Click Ripple at Start Button
         for ($r = 10; $r -le 70; $r += 6) {
@@ -155,23 +157,23 @@ if ($Action -eq "banner" -or $Action -eq "launch_app" -or $Action -eq "ripple" -
             [System.Windows.Controls.Canvas]::SetTop($ripple2, $startY - ($r2 / 2))
 
             [System.Windows.Forms.Application]::DoEvents()
-            Start-Sleep -Milliseconds 10
+            Start-Sleep -Milliseconds 8
         }
         $ripple1.Opacity = 0
         $ripple2.Opacity = 0
 
         # STEP 2: Searching & Launching
-        $statusText.Text = "Step 2/3: Launching '$AppTitle'..."
+        $statusText.Text = "Step 2/3: Searching and Launching " + $safeAppTitle + "..."
         $stepBadge.Text = "STEP 2/3"
         [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 350
+        Start-Sleep -Milliseconds 250
 
         # STEP 3: Glide to Screen Center & Verify
-        $statusText.Text = "Step 3/3: Activating Window & Focusing Workspace..."
+        $statusText.Text = "Step 3/3: Activating Window and Focusing Workspace..."
         $stepBadge.Text = "STEP 3/3"
         $centerX = [int]($screenWidth / 2)
         $centerY = [int]($screenHeight / 2)
-        Move-CursorSmooth $centerX $centerY 18 10
+        Move-CursorSmooth $centerX $centerY 16 10
         
         # Center Click Ripple
         for ($r = 10; $r -le 60; $r += 6) {
@@ -181,23 +183,23 @@ if ($Action -eq "banner" -or $Action -eq "launch_app" -or $Action -eq "ripple" -
             [System.Windows.Controls.Canvas]::SetLeft($ripple1, $centerX - ($r / 2))
             [System.Windows.Controls.Canvas]::SetTop($ripple1, $centerY - ($r / 2))
             [System.Windows.Forms.Application]::DoEvents()
-            Start-Sleep -Milliseconds 10
+            Start-Sleep -Milliseconds 8
         }
         $ripple1.Opacity = 0
 
         # SUCCESS
-        $statusText.Text = "✓ SUCCESS: $AppTitle is Launched & Ready!"
-        $stepBadge.Text = "✓ READY"
+        $statusText.Text = "[SUCCESS] " + $safeAppTitle + " is Active and Ready!"
+        $stepBadge.Text = "READY"
         $hudCapsule.BorderBrush = [System.Windows.Media.Brushes]::LimeGreen
         [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 900
+        Start-Sleep -Milliseconds 700
     }
     elseif ($Action -eq "glide_click") {
-        $statusText.Text = "$Message"
+        $statusText.Text = $safeMessage
         $stepBadge.Text = "TARGETING"
         [System.Windows.Forms.Application]::DoEvents()
 
-        Move-CursorSmooth $TargetX $TargetY 18 10
+        Move-CursorSmooth $TargetX $TargetY 16 10
 
         # Click Ripple at Target
         for ($r = 10; $r -le 70; $r += 6) {
@@ -207,20 +209,20 @@ if ($Action -eq "banner" -or $Action -eq "launch_app" -or $Action -eq "ripple" -
             [System.Windows.Controls.Canvas]::SetLeft($ripple1, $TargetX - ($r / 2))
             [System.Windows.Controls.Canvas]::SetTop($ripple1, $TargetY - ($r / 2))
             [System.Windows.Forms.Application]::DoEvents()
-            Start-Sleep -Milliseconds 10
+            Start-Sleep -Milliseconds 8
         }
         $ripple1.Opacity = 0
-        Start-Sleep -Milliseconds 300
+        Start-Sleep -Milliseconds 250
     }
     else {
         Start-Sleep -Milliseconds $DurationMs
     }
 
-    # Animate Capsule Out (Fade Out)
+    # Fade Out
     for ($op = 10; $op -ge 0; $op--) {
         $hudCapsule.Opacity = $op / 10.0
         [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 10
+        Start-Sleep -Milliseconds 8
     }
 
     $window.Close()
